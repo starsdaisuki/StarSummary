@@ -6,9 +6,10 @@ import re
 import shutil
 import tempfile
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
     filters,
@@ -113,10 +114,25 @@ def _run_transcribe(audio_path: str) -> tuple[str, str]:
     return transcript.text, " | ".join(info_parts)
 
 
-async def _send_transcript(update: Update, text: str, info: str) -> None:
-    """发送转录结果，过长则以文件形式发送"""
+def _has_deepseek_key() -> bool:
+    """检查是否配置了 DeepSeek API Key"""
+    return bool(os.environ.get("DEEPSEEK_API_KEY", "").strip())
+
+
+async def _send_transcript(update: Update, context, text: str, info: str) -> None:
+    """发送转录结果，过长则以文件形式发送。配置了 DeepSeek 时显示总结按钮。"""
+    # 构建 inline keyboard
+    buttons = []
+    if _has_deepseek_key():
+        buttons.append(InlineKeyboardButton("🤖 AI 总结", callback_data="summarize"))
+    buttons.append(InlineKeyboardButton("📋 导出文件", callback_data="export"))
+    reply_markup = InlineKeyboardMarkup([buttons])
+
     if len(text) <= _MAX_MSG_LEN:
-        await update.message.reply_text(f"{text}\n\n📊 {info}")
+        await update.message.reply_text(
+            f"{text}\n\n📊 {info}",
+            reply_markup=reply_markup,
+        )
     else:
         # 以 txt 文件发送
         buf = io.BytesIO(text.encode("utf-8"))
@@ -124,7 +140,12 @@ async def _send_transcript(update: Update, text: str, info: str) -> None:
         await update.message.reply_document(
             document=buf,
             caption=f"📝 转录完成（{len(text)} 字符）\n📊 {info}",
+            reply_markup=reply_markup,
         )
+
+    # 存储转录文本供后续总结/导出使用
+    context.user_data["last_transcript"] = text
+    context.user_data["last_info"] = info
 
 
 async def cmd_start(update: Update, context) -> None:
@@ -176,7 +197,7 @@ async def handle_url(update: Update, context) -> None:
             shutil.rmtree(downloader.tmp_dir, ignore_errors=True)
 
     await status_msg.delete()
-    await _send_transcript(update, text, info)
+    await _send_transcript(update, context, text, info)
 
 
 async def handle_file(update: Update, context) -> None:
@@ -222,7 +243,65 @@ async def handle_file(update: Update, context) -> None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
     await status_msg.delete()
-    await _send_transcript(update, text, info)
+    await _send_transcript(update, context, text, info)
+
+
+async def handle_callback(update: Update, context) -> None:
+    """处理 Inline Keyboard 按钮点击"""
+    query = update.callback_query
+    await query.answer()
+
+    transcript = context.user_data.get("last_transcript", "")
+    if not transcript:
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text("⚠️ 没有可用的转录文本，请重新发送链接或文件。")
+        return
+
+    if query.data == "summarize":
+        deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        if not deepseek_key:
+            await query.message.reply_text("⚠️ 未配置 DEEPSEEK_API_KEY，无法生成总结。")
+            return
+
+        # 移除按钮，防止重复点击
+        await query.edit_message_reply_markup(reply_markup=None)
+
+        status_msg = await query.message.reply_text("⏳ 正在生成 AI 总结...")
+
+        try:
+            from star_summary.summarizer import get_summarizer
+
+            summarizer = get_summarizer(api_key=deepseek_key)
+            result = summarizer.summarize(transcript)
+
+            if result.text:
+                summary_info = f"模型: {result.model} | 耗时: {result.summarize_time:.1f}s"
+                if len(result.text) <= _MAX_MSG_LEN:
+                    await status_msg.edit_text(f"🤖 AI 总结\n\n{result.text}\n\n📊 {summary_info}")
+                else:
+                    await status_msg.delete()
+                    buf = io.BytesIO(result.text.encode("utf-8"))
+                    buf.name = "summary.txt"
+                    await query.message.reply_document(
+                        document=buf,
+                        caption=f"🤖 AI 总结（{len(result.text)} 字符）\n📊 {summary_info}",
+                    )
+            else:
+                await status_msg.edit_text("❌ 总结生成失败，请稍后重试。")
+        except Exception as e:
+            await status_msg.edit_text(f"❌ 总结失败: {e}")
+
+    elif query.data == "export":
+        # 移除按钮
+        await query.edit_message_reply_markup(reply_markup=None)
+
+        buf = io.BytesIO(transcript.encode("utf-8"))
+        buf.name = "transcript.txt"
+        info = context.user_data.get("last_info", "")
+        await query.message.reply_document(
+            document=buf,
+            caption=f"📋 转录文本（{len(transcript)} 字符）\n📊 {info}" if info else f"📋 转录文本（{len(transcript)} 字符）",
+        )
 
 
 async def handle_unknown(update: Update, context) -> None:
@@ -262,6 +341,9 @@ def main() -> None:
         filters.TEXT & filters.Regex(_URL_PATTERN),
         handle_url,
     ))
+
+    # Inline Keyboard 回调
+    app.add_handler(CallbackQueryHandler(handle_callback))
 
     # 未知消息
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown))
