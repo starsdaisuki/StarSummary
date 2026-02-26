@@ -123,7 +123,7 @@ def _print_preview(transcript: TranscriptResult, summary: SummaryResult | None) 
         print(f"\n{summary.text}")
 
 
-def _build_config(args: argparse.Namespace) -> Config:
+def _build_config_from_args(args: argparse.Namespace) -> Config:
     """从 argparse 结果构建 Config"""
     return Config(
         input=args.input,
@@ -140,10 +140,48 @@ def _build_config(args: argparse.Namespace) -> Config:
     )
 
 
-def main() -> None:
-    from dotenv import load_dotenv
-    load_dotenv()
+def _prompt(icon: str, msg: str, default: str = "") -> str:
+    """带图标的交互提示，支持默认值"""
+    hint = f" ({default})" if default else ""
+    try:
+        return input(f"  {icon} {msg}{hint}: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit(0)
 
+
+def _interactive_mode() -> Config:
+    """交互模式：逐步提示用户输入参数，返回 Config"""
+    # 输入源（必填）
+    while True:
+        source = _prompt("📎", "视频链接或文件路径")
+        if source:
+            break
+        log_warn("Please enter a URL or file path")
+
+    # ASR 引擎
+    engine_input = _prompt("🎙️", "ASR 引擎 [paraformer/whisper]", "paraformer")
+    engine = engine_input if engine_input in ("paraformer", "whisper") else "paraformer"
+
+    # AI 总结
+    summarize_input = _prompt("🤖", "AI 总结? [y/N]", "N")
+    summarize = summarize_input.lower() in ("y", "yes")
+
+    # 复制到剪贴板
+    copy_input = _prompt("📋", "复制到剪贴板? [Y/n]", "Y")
+    copy = copy_input.lower() not in ("n", "no")
+
+    print()
+    return Config(
+        input=source,
+        engine=engine,
+        summarize=summarize,
+        copy=copy,
+    )
+
+
+def _parse_args() -> argparse.Namespace:
+    """解析命令行参数"""
     parser = argparse.ArgumentParser(
         description="StarSummary (星语) - Video/Audio → Transcript → Summary",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -217,16 +255,28 @@ Examples:
         help="Copy transcript to clipboard (macOS pbcopy)",
     )
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    # ── Banner ──
+
+def _print_banner() -> None:
     print(f"""
 {_C.MAGENTA}{_C.BOLD}  ✦ StarSummary (星语) ✦{_C.RESET}
 {_C.DIM}  Video/Audio → Transcript → Summary{_C.RESET}
     """)
 
-    # ── 构造配置 ──
-    config = _build_config(args)
+
+def main() -> None:
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    _print_banner()
+
+    # 无参数 → 交互模式，有参数 → CLI 模式
+    if len(sys.argv) == 1:
+        config = _interactive_mode()
+    else:
+        args = _parse_args()
+        config = _build_config_from_args(args)
 
     # ── 检查系统依赖 ──
     _check_system_deps()
