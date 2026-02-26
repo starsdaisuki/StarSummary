@@ -13,42 +13,40 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
-from telegram.constants import ParseMode
-
 from star_summary.config import Config
 from star_summary.utils import format_time
 
-WELCOME_TEXT = """✦ *StarSummary (星语)* ✦
+WELCOME_TEXT = """✦ StarSummary (星语) ✦
 
 视频/音频 → 文字转录，发链接即用。
 
-*使用方式：*
+使用方式：
 • 直接发送视频链接（YouTube、B站、抖音等）
 • 或者发送音频/视频文件
 
-*支持平台：*
-YouTube, Bilibili, 抖音, 西瓜视频, 微博, Twitter/X, 及更多 yt\\-dlp 支持的站点
+支持平台：
+YouTube, Bilibili, 抖音, 西瓜视频, 微博, Twitter/X, 及更多 yt-dlp 支持的站点
 
-*命令：*
-/start \\- 欢迎信息
-/help \\- 使用帮助"""
+命令：
+/start - 欢迎信息
+/help - 使用帮助"""
 
-HELP_TEXT = """*使用帮助*
+HELP_TEXT = """使用帮助
 
-*1\\. 发送链接*
+1. 发送链接
 直接粘贴视频链接，Bot 会自动下载并转录：
-`https://www.bilibili.com/video/BVxxx`
-`https://www.youtube.com/watch?v=xxx`
+https://www.bilibili.com/video/BVxxx
+https://www.youtube.com/watch?v=xxx
 
-*2\\. 发送文件*
+2. 发送文件
 直接发送音频或视频文件，Bot 会自动转录。
 支持格式：mp3, wav, flac, m4a, ogg, mp4, mkv, avi, mov, webm
 
-*3\\. 输出*
+3. 输出
 转录完成后，Bot 会直接回复文字。
 如果文本较长，会以 txt 文件形式发送。
 
-*注意：*
+注意：
 • 较长的视频可能需要几分钟处理
 • 默认使用阿里云 Paraformer 引擎"""
 
@@ -105,11 +103,11 @@ async def _send_transcript(update: Update, text: str, info: str) -> None:
 
 
 async def cmd_start(update: Update, context) -> None:
-    await update.message.reply_text(WELCOME_TEXT, parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text(WELCOME_TEXT)
 
 
 async def cmd_help(update: Update, context) -> None:
-    await update.message.reply_text(HELP_TEXT, parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text(HELP_TEXT)
 
 
 async def handle_url(update: Update, context) -> None:
