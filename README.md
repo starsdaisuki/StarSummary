@@ -69,6 +69,9 @@ starsummary "https://v.douyin.com/xxx" -cb chrome
 
 # 指定输出目录并保留音频
 starsummary "https://..." -o ~/summaries/ --keep-audio
+
+# 转录后复制到剪贴板，方便粘贴给 LLM
+starsummary audio.mp3 --copy
 ```
 
 ## 参数
@@ -85,14 +88,25 @@ starsummary "https://..." -o ~/summaries/ --keep-audio
 | `-cb, --cookies-from-browser` | 从浏览器读取 cookies |
 | `-o, --output` | 输出目录，默认 `./star_summary_output/` |
 | `--keep-audio` | 保留下载的音频文件 |
+| `-C, --copy` | 转录后复制纯文本到剪贴板（macOS pbcopy） |
 
 ## 输出文件
 
+输出按日期分组，文件名包含标题和时间戳，避免覆盖：
+
+```
+star_summary_output/
+└── 2026-02-26/
+    ├── 崩坏星穹铁道_火花_143052_transcript.txt
+    ├── 崩坏星穹铁道_火花_143052_timed.txt
+    └── 崩坏星穹铁道_火花_143052_summary.txt
+```
+
 | 文件 | 说明 |
 |------|------|
-| `transcript.txt` | 纯文本转录（带元信息头部） |
-| `transcript_timed.txt` | 带时间戳的转录 `[MM:SS.ss → MM:SS.ss]` |
-| `summary.txt` | AI 总结（仅 `--summarize` 时生成） |
+| `*_transcript.txt` | 纯文本转录（带元信息头部） |
+| `*_timed.txt` | 带时间戳的转录 `[MM:SS.ss → MM:SS.ss]` |
+| `*_summary.txt` | AI 总结（仅 `--summarize` 时生成） |
 
 ## Whisper 模型选择
 
