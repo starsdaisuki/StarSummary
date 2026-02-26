@@ -119,14 +119,31 @@ def _has_deepseek_key() -> bool:
     return bool(os.environ.get("DEEPSEEK_API_KEY", "").strip())
 
 
+# 总结风格预设
+_SUMMARY_STYLES: dict[str, str] = {
+    "brief": "请用2-3句话概括这段内容的核心信息，简明扼要。",
+    "detailed": "请对以下内容进行详细总结：先概括主题，再分点列出关键内容，标注重要数据和结论。",
+    "keypoints": "请从以下内容中提取所有关键要点、数据、结论，用编号列表呈现。",
+}
+
+
 async def _send_transcript(update: Update, context, text: str, info: str) -> None:
     """发送转录结果，过长则以文件形式发送。配置了 DeepSeek 时显示总结按钮。"""
     # 构建 inline keyboard
-    buttons = []
     if _has_deepseek_key():
-        buttons.append(InlineKeyboardButton("🤖 AI 总结", callback_data="summarize"))
-    buttons.append(InlineKeyboardButton("📋 导出文件", callback_data="export"))
-    reply_markup = InlineKeyboardMarkup([buttons])
+        keyboard = [
+            [
+                InlineKeyboardButton("📋 简洁摘要", callback_data="sum:brief"),
+                InlineKeyboardButton("📝 详细总结", callback_data="sum:detailed"),
+            ],
+            [
+                InlineKeyboardButton("🎯 提取要点", callback_data="sum:keypoints"),
+                InlineKeyboardButton("✨ 自定义", callback_data="sum:custom"),
+            ],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+    else:
+        reply_markup = None
 
     if len(text) <= _MAX_MSG_LEN:
         await update.message.reply_text(
@@ -246,6 +263,37 @@ async def handle_file(update: Update, context) -> None:
     await _send_transcript(update, context, text, info)
 
 
+async def _run_summary(query, context, system_prompt: str) -> None:
+    """执行总结并回复结果"""
+    transcript = context.user_data.get("last_transcript", "")
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+
+    status_msg = await query.message.reply_text("⏳ 正在生成总结...")
+
+    try:
+        from star_summary.summarizer import get_summarizer
+
+        summarizer = get_summarizer(api_key=deepseek_key)
+        result = summarizer.summarize(transcript, system_prompt=system_prompt)
+
+        if result.text:
+            summary_info = f"模型: {result.model} | 耗时: {result.summarize_time:.1f}s"
+            if len(result.text) <= _MAX_MSG_LEN:
+                await status_msg.edit_text(f"🤖 AI 总结\n\n{result.text}\n\n📊 {summary_info}")
+            else:
+                await status_msg.delete()
+                buf = io.BytesIO(result.text.encode("utf-8"))
+                buf.name = "summary.txt"
+                await query.message.reply_document(
+                    document=buf,
+                    caption=f"🤖 AI 总结（{len(result.text)} 字符）\n📊 {summary_info}",
+                )
+        else:
+            await status_msg.edit_text("❌ 总结生成失败，请稍后重试。")
+    except Exception as e:
+        await status_msg.edit_text(f"❌ 总结失败: {e}")
+
+
 async def handle_callback(update: Update, context) -> None:
     """处理 Inline Keyboard 按钮点击"""
     query = update.callback_query
@@ -257,55 +305,94 @@ async def handle_callback(update: Update, context) -> None:
         await query.message.reply_text("⚠️ 没有可用的转录文本，请重新发送链接或文件。")
         return
 
-    if query.data == "summarize":
-        deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-        if not deepseek_key:
-            await query.message.reply_text("⚠️ 未配置 DEEPSEEK_API_KEY，无法生成总结。")
-            return
+    if not query.data or not query.data.startswith("sum:"):
+        return
 
-        # 移除按钮，防止重复点击
-        await query.edit_message_reply_markup(reply_markup=None)
+    style = query.data.split(":", 1)[1]
 
-        status_msg = await query.message.reply_text("⏳ 正在生成 AI 总结...")
+    # 移除按钮，防止重复点击
+    await query.edit_message_reply_markup(reply_markup=None)
 
-        try:
-            from star_summary.summarizer import get_summarizer
+    if style == "custom":
+        # 自定义风格：提示用户输入
+        prev_style = context.user_data.get("custom_style", "")
+        if prev_style:
+            hint = f"🎨 上次的风格：{prev_style}\n\n直接发送「用上次的」复用，或发送新的总结风格描述："
+        else:
+            hint = "🎨 请发送你想要的总结风格描述："
+        await query.message.reply_text(hint)
+        context.user_data["waiting_custom_style"] = True
+        return
 
-            summarizer = get_summarizer(api_key=deepseek_key)
-            result = summarizer.summarize(transcript)
+    system_prompt = _SUMMARY_STYLES.get(style)
+    if not system_prompt:
+        return
 
-            if result.text:
-                summary_info = f"模型: {result.model} | 耗时: {result.summarize_time:.1f}s"
-                if len(result.text) <= _MAX_MSG_LEN:
-                    await status_msg.edit_text(f"🤖 AI 总结\n\n{result.text}\n\n📊 {summary_info}")
-                else:
-                    await status_msg.delete()
-                    buf = io.BytesIO(result.text.encode("utf-8"))
-                    buf.name = "summary.txt"
-                    await query.message.reply_document(
-                        document=buf,
-                        caption=f"🤖 AI 总结（{len(result.text)} 字符）\n📊 {summary_info}",
-                    )
+    await _run_summary(query, context, system_prompt)
+
+
+async def handle_custom_style(update: Update, context) -> None:
+    """处理用户发送的自定义总结风格"""
+    if not context.user_data.get("waiting_custom_style"):
+        return  # 不在等待状态，跳过让后续 handler 处理
+
+    context.user_data["waiting_custom_style"] = False
+    text = (update.message.text or "").strip()
+
+    if not text:
+        await update.message.reply_text("⚠️ 风格描述不能为空，请重新点击自定义按钮。")
+        return
+
+    # 如果用户说复用上次的
+    prev_style = context.user_data.get("custom_style", "")
+    if prev_style and text in ("用上次的", "复用", "上次的"):
+        text = prev_style
+
+    # 保存自定义风格
+    context.user_data["custom_style"] = text
+
+    transcript = context.user_data.get("last_transcript", "")
+    if not transcript:
+        await update.message.reply_text("⚠️ 没有可用的转录文本，请重新发送链接或文件。")
+        return
+
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if not deepseek_key:
+        await update.message.reply_text("⚠️ 未配置 DEEPSEEK_API_KEY，无法生成总结。")
+        return
+
+    status_msg = await update.message.reply_text("⏳ 正在生成总结...")
+
+    try:
+        from star_summary.summarizer import get_summarizer
+
+        summarizer = get_summarizer(api_key=deepseek_key)
+        result = summarizer.summarize(transcript, system_prompt=text)
+
+        if result.text:
+            summary_info = f"模型: {result.model} | 耗时: {result.summarize_time:.1f}s"
+            if len(result.text) <= _MAX_MSG_LEN:
+                await status_msg.edit_text(f"🤖 AI 总结\n\n{result.text}\n\n📊 {summary_info}")
             else:
-                await status_msg.edit_text("❌ 总结生成失败，请稍后重试。")
-        except Exception as e:
-            await status_msg.edit_text(f"❌ 总结失败: {e}")
-
-    elif query.data == "export":
-        # 移除按钮
-        await query.edit_message_reply_markup(reply_markup=None)
-
-        buf = io.BytesIO(transcript.encode("utf-8"))
-        buf.name = "transcript.txt"
-        info = context.user_data.get("last_info", "")
-        await query.message.reply_document(
-            document=buf,
-            caption=f"📋 转录文本（{len(transcript)} 字符）\n📊 {info}" if info else f"📋 转录文本（{len(transcript)} 字符）",
-        )
+                await status_msg.delete()
+                buf = io.BytesIO(result.text.encode("utf-8"))
+                buf.name = "summary.txt"
+                await update.message.reply_document(
+                    document=buf,
+                    caption=f"🤖 AI 总结（{len(result.text)} 字符）\n📊 {summary_info}",
+                )
+        else:
+            await status_msg.edit_text("❌ 总结生成失败，请稍后重试。")
+    except Exception as e:
+        await status_msg.edit_text(f"❌ 总结失败: {e}")
 
 
 async def handle_unknown(update: Update, context) -> None:
     """处理无法识别的文本消息"""
+    # 如果正在等待自定义风格输入，交给 handle_custom_style
+    if context.user_data.get("waiting_custom_style"):
+        await handle_custom_style(update, context)
+        return
     text = update.message.text or ""
     if text.startswith("/"):
         await update.message.reply_text("❓ 未知命令，输入 /help 查看帮助。")
