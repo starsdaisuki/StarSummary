@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # StarSummary VPS 一键部署脚本
-# 用法: bash deploy/setup.sh
+# 用法:
+#   bash deploy/setup.sh                     # 在项目目录中运行
+#   bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/StarSummary/main/deploy/setup.sh)
 
 set -e
+
+REPO_URL="https://github.com/starsdaisuki/StarSummary.git"
+DEFAULT_DIR="$HOME/StarSummary"
 
 # ─────────────────────────────────────────────
 # 颜色
@@ -22,9 +27,47 @@ err()  { echo -e "   ${RED}✗ $1${RESET}"; }
 step() { echo -e "\n${CYAN}${BOLD}$1  $2${RESET}"; }
 
 # ─────────────────────────────────────────────
-# 项目路径
+# 自动 clone：如果不在项目目录中
 # ─────────────────────────────────────────────
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+_find_project_dir() {
+    # 1. 如果当前目录有 pyproject.toml，说明已在项目中
+    if [[ -f "./pyproject.toml" ]]; then
+        echo "$(pwd)"
+        return
+    fi
+
+    # 2. 如果是通过 bash deploy/setup.sh 运行，检查上级目录
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || true
+    if [[ -n "${script_dir}" && -f "${script_dir}/../pyproject.toml" ]]; then
+        echo "$(cd "${script_dir}/.." && pwd)"
+        return
+    fi
+
+    # 3. 不在项目中，需要 clone
+    echo ""
+}
+
+PROJECT_DIR="$(_find_project_dir)"
+
+if [[ -z "${PROJECT_DIR}" ]]; then
+    step "📦" "Clone StarSummary..."
+
+    if ! command -v git &>/dev/null; then
+        sudo apt-get update -qq && sudo apt-get install -y git
+    fi
+
+    if [[ -d "${DEFAULT_DIR}" && -f "${DEFAULT_DIR}/pyproject.toml" ]]; then
+        ok "已存在 ${DEFAULT_DIR}，执行 git pull"
+        cd "${DEFAULT_DIR}" && git pull
+    else
+        git clone "${REPO_URL}" "${DEFAULT_DIR}"
+        ok "Clone 完成: ${DEFAULT_DIR}"
+    fi
+
+    PROJECT_DIR="${DEFAULT_DIR}"
+    cd "${PROJECT_DIR}"
+fi
 DEPLOY_USER="$(whoami)"
 VENV_DIR="${PROJECT_DIR}/.venv"
 ENV_FILE="${PROJECT_DIR}/.env"
