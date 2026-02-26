@@ -1,0 +1,15 @@
+[Unit]
+Description=StarSummary Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=DEPLOY_USER
+WorkingDirectory=PROJECT_DIR
+EnvironmentFile=PROJECT_DIR/.env
+ExecStart=PROJECT_DIR/.venv/bin/starsummary-bot
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
