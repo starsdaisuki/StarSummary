@@ -2,7 +2,7 @@
 
 Video/Audio → Transcript → Summary
 
-将视频/音频转录为文字，并可选地进行 AI 总结。
+将视频/音频转录为文字，并可选地进行 AI 总结。支持 CLI、Web UI、Telegram Bot 三种使用方式。
 
 ## 功能
 
@@ -11,45 +11,50 @@ Video/Audio → Transcript → Summary
 - 双 ASR 引擎：阿里云 Paraformer（默认，云端）/ faster-whisper（本地）
 - 可选 DeepSeek LLM 总结
 - 输出带时间戳的转录文本
+- 三种使用方式：CLI 命令行 / Gradio Web UI / Telegram Bot
 
 ## 安装
 
 ### 前置依赖
 
 ```bash
+# macOS
 brew install yt-dlp ffmpeg
+
+# Ubuntu/Debian
+sudo apt install ffmpeg
+pip install yt-dlp
 ```
 
 ### 安装项目
 
 ```bash
-# 基本安装（仅 Paraformer 引擎）
-uv pip install .
+# 基本安装
+uv sync
 
-# 安装全部功能
-uv pip install ".[all]"
-
-# 仅安装 whisper 引擎
-uv pip install ".[whisper]"
-
-# 仅安装总结功能
-uv pip install ".[summarize]"
+# 安装全部可选功能（whisper + 总结）
+uv sync --extra all
 ```
 
 ### 配置 API Key
 
-```bash
-# Paraformer（默认引擎）
-export DASHSCOPE_API_KEY="your-key"
+在项目根目录创建 `.env` 文件（或 export 环境变量）：
 
-# DeepSeek（总结功能）
-export DEEPSEEK_API_KEY="your-key"
+```bash
+DASHSCOPE_API_KEY=your-key        # Paraformer（默认引擎）
+DEEPSEEK_API_KEY=your-key         # DeepSeek（总结功能）
+TELEGRAM_BOT_TOKEN=your-token     # Telegram Bot
 ```
 
-## 使用
+## 使用方式
+
+### 1. CLI 命令行
 
 ```bash
-# 基本用法 - 转录视频
+# 无参数进入交互模式
+starsummary
+
+# 基本用法
 starsummary "https://www.bilibili.com/video/BV1xx..."
 
 # 使用本地 whisper 引擎（无需 API Key）
@@ -70,11 +75,28 @@ starsummary "https://v.douyin.com/xxx" -cb chrome
 # 指定输出目录并保留音频
 starsummary "https://..." -o ~/summaries/ --keep-audio
 
-# 转录后复制到剪贴板，方便粘贴给 LLM
+# 转录后复制到剪贴板
 starsummary audio.mp3 --copy
 ```
 
-## 参数
+### 2. Web UI
+
+```bash
+starsummary-web
+```
+
+自动打开浏览器，提供图形化操作界面。
+
+### 3. Telegram Bot
+
+```bash
+# 需要先配置 TELEGRAM_BOT_TOKEN
+starsummary-bot
+```
+
+直接给 Bot 发视频链接或音频文件即可获得转录文本。
+
+## CLI 参数
 
 | 参数 | 说明 |
 |------|------|
@@ -108,6 +130,25 @@ star_summary_output/
 | `*_timed.txt` | 带时间戳的转录 `[MM:SS.ss → MM:SS.ss]` |
 | `*_summary.txt` | AI 总结（仅 `--summarize` 时生成） |
 
+## VPS 部署（Telegram Bot）
+
+```bash
+# 首次部署
+git clone <repo> StarSummary && cd StarSummary
+bash deploy/setup.sh
+
+# 后续更新
+bash deploy/update.sh
+
+# 管理服务
+sudo systemctl status starsummary-bot     # 查看状态
+sudo systemctl restart starsummary-bot    # 重启
+sudo systemctl stop starsummary-bot       # 停止
+journalctl -u starsummary-bot -f          # 看日志
+```
+
+`setup.sh` 会自动完成：安装系统依赖 → 交互式配置 API Key → 创建 systemd 服务 → 配置 crontab 定时任务。
+
 ## Whisper 模型选择
 
 仅在使用 `--engine whisper` 时有效：
@@ -123,21 +164,29 @@ star_summary_output/
 ## 项目结构
 
 ```
-src/star_summary/
-├── __init__.py              # 版本号
-├── cli.py                   # CLI 入口
-├── config.py                # 配置管理
-├── utils.py                 # 工具函数
-├── models.py                # 数据模型
-├── downloader/              # 下载模块
-│   ├── base.py              # 抽象基类
-│   ├── ytdlp.py             # yt-dlp 实现
-│   └── local.py             # 本地文件处理
-├── transcriber/             # 转录模块
-│   ├── base.py              # 抽象基类
-│   ├── paraformer.py        # 阿里云 Paraformer
-│   └── whisper_local.py     # 本地 faster-whisper
-└── summarizer/              # 总结模块
-    ├── base.py              # 抽象基类
-    └── deepseek.py          # DeepSeek API
+StarSummary/
+├── src/star_summary/
+│   ├── __init__.py              # 版本号
+│   ├── cli.py                   # CLI 入口（含交互模式）
+│   ├── web.py                   # Gradio Web UI
+│   ├── bot.py                   # Telegram Bot
+│   ├── config.py                # 配置管理
+│   ├── utils.py                 # 工具函数
+│   ├── models.py                # 数据模型
+│   ├── downloader/              # 下载模块
+│   │   ├── base.py
+│   │   ├── ytdlp.py
+│   │   └── local.py
+│   ├── transcriber/             # 转录模块
+│   │   ├── base.py
+│   │   ├── paraformer.py
+│   │   └── whisper_local.py
+│   └── summarizer/              # 总结模块
+│       ├── base.py
+│       └── deepseek.py
+├── deploy/                      # VPS 部署
+│   ├── setup.sh                 # 一键部署
+│   ├── update.sh                # 快速更新
+│   └── starsummary-bot.service  # systemd 服务
+└── pyproject.toml
 ```
