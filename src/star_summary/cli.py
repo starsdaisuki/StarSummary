@@ -104,6 +104,9 @@ def _build_config(args: argparse.Namespace) -> Config:
 
 
 def main() -> None:
+    from dotenv import load_dotenv
+    load_dotenv()
+
     parser = argparse.ArgumentParser(
         description="StarSummary (星语) - Video/Audio → Transcript → Summary",
         formatter_class=argparse.RawDescriptionHelpFormatter,

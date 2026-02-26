@@ -10,4 +10,10 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
+.venv/
+
+# Environment variables
+.env
+
+# Output
+star_summary_output/
