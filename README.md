@@ -1,19 +1,22 @@
 # StarSummary (星语)
 
-Video/Audio → Transcript → Summary
+**Video/Audio → Transcript → Summary**
 
-将视频/音频转录为文字，并可选地进行 AI 总结。支持 CLI、Web UI、Telegram Bot 三种使用方式。
+一条链接，自动转录为文字。粘贴 YouTube、B站、抖音等视频链接，或发送音频文件，即可获得完整的转录文本和 AI 总结。
 
-## 功能
+支持三种使用方式：**命令行 CLI** / **Gradio Web UI** / **Telegram Bot**
 
-- 支持 YouTube、Bilibili、抖音等平台视频链接
-- 支持本地音频/视频文件
-- 双 ASR 引擎：阿里云 Paraformer（默认，云端）/ faster-whisper（本地）
-- 可选 DeepSeek LLM 总结
-- 输出带时间戳的转录文本
-- 三种使用方式：CLI 命令行 / Gradio Web UI / Telegram Bot
+## 功能亮点
 
-## 安装
+- **多平台支持** — YouTube、Bilibili、抖音、西瓜视频、微博、Twitter/X 等所有 yt-dlp 支持的站点
+- **本地文件** — 支持 mp3、wav、flac、m4a、ogg、mp4、mkv、avi、mov、webm
+- **双 ASR 引擎** — 阿里云 Paraformer（云端，速度快）/ faster-whisper（本地，无需联网）
+- **AI 总结** — DeepSeek 一键总结，支持简洁摘要、详细总结、提取要点、自定义风格
+- **带时间戳** — 输出 `[MM:SS.ss → MM:SS.ss]` 格式的时间轴文本
+- **VPS 一键部署** — 一条命令部署 Telegram Bot 到服务器，支持 Debian / Ubuntu
+- **交互模式** — 无参数运行自动进入引导式操作
+
+## 本地安装
 
 ### 前置依赖
 
@@ -27,31 +30,46 @@ Ubuntu/Debian:
 
 ```bash
 sudo apt install ffmpeg
+```
+
+```bash
 pip install yt-dlp
 ```
 
 ### 安装项目
 
-基本安装：
+```bash
+git clone https://github.com/starsdaisuki/StarSummary.git
+```
+
+```bash
+cd StarSummary
+```
 
 ```bash
 uv sync
 ```
 
-安装全部可选功能（whisper + 总结）：
+如果需要本地 whisper 引擎（可选）：
 
 ```bash
-uv sync --extra all
+uv sync --extra whisper
 ```
 
 ### 配置 API Key
 
 在项目根目录创建 `.env` 文件：
 
+```bash
+cp .env.example .env
 ```
-DASHSCOPE_API_KEY=your-key        # Paraformer（默认引擎）
-DEEPSEEK_API_KEY=your-key         # DeepSeek（总结功能）
-TELEGRAM_BOT_TOKEN=your-token     # Telegram Bot
+
+然后编辑填入你的 Key：
+
+```
+TELEGRAM_BOT_TOKEN=your-token     # Telegram Bot（Bot 模式必填）
+DASHSCOPE_API_KEY=your-key        # 阿里云百炼（Paraformer 转录引擎）
+DEEPSEEK_API_KEY=your-key         # DeepSeek（AI 总结功能）
 ```
 
 ## 使用方式
@@ -116,7 +134,7 @@ starsummary-web
 starsummary-bot
 ```
 
-直接给 Bot 发视频链接或音频文件即可获得转录文本。
+直接给 Bot 发视频链接或音频文件即可获得转录文本。转录完成后会显示 AI 总结按钮（需配置 `DEEPSEEK_API_KEY`），支持选择不同的总结风格。
 
 ## CLI 参数
 
@@ -164,18 +182,7 @@ SSH 到 VPS 后直接运行：
 bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/StarSummary/main/deploy/setup.sh)
 ```
 
-脚本会自动完成以下步骤：
-
-1. Clone 仓库到 `~/StarSummary`
-2. 安装系统依赖（ffmpeg、git、curl）
-3. 安装 uv 并用 `uv python install 3.12` 安装 Python
-4. 安装 yt-dlp（通过 `uv tool install`）
-5. 将 uv、yt-dlp 软链接到 `/usr/local/bin/`（解决 systemd PATH 问题）
-6. 安装 Python 项目依赖（`uv sync`）
-7. 交互式引导配置 API Key，写入 `.env`
-8. 创建 systemd 服务并设为开机自启
-9. 配置 crontab 定时任务（自动更新 yt-dlp、每日重启 Bot）
-10. 启动 Bot
+脚本会自动完成：clone 仓库 → 安装 uv/Python 3.12/ffmpeg/yt-dlp → 安装依赖 → 交互式配置 API Key → 创建 systemd 服务 → 配置定时任务 → 启动 Bot。
 
 ### 手动 clone 后部署
 
@@ -193,25 +200,14 @@ bash deploy/setup.sh
 
 ### 修改配置
 
-部署完成后，如果需要修改 API Key 或其他配置：
-
 ```bash
 nano ~/StarSummary/.env
 ```
 
-`.env` 文件内容示例：
-
-```
-DASHSCOPE_API_KEY=your-dashscope-key
-TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-ALLOWED_TELEGRAM_USERS=123456789,987654321
-DEEPSEEK_API_KEY=your-deepseek-key
-```
-
 | 配置项 | 说明 | 必填 |
 |--------|------|------|
-| `DASHSCOPE_API_KEY` | 阿里云百炼 API Key（Paraformer 转录引擎） | 推荐 |
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot Token（从 @BotFather 获取） | 是 |
+| `DASHSCOPE_API_KEY` | 阿里云百炼 API Key（Paraformer 转录引擎） | 推荐 |
 | `ALLOWED_TELEGRAM_USERS` | 允许使用的用户 ID，逗号分隔（留空则所有人可用） | 否 |
 | `DEEPSEEK_API_KEY` | DeepSeek API Key（AI 总结功能） | 否 |
 
@@ -224,45 +220,63 @@ sudo systemctl restart starsummary-bot
 ### 后续更新
 
 ```bash
-cd ~/StarSummary
-```
-
-```bash
-bash deploy/update.sh
+cd ~/StarSummary && bash deploy/update.sh
 ```
 
 会自动 `git pull` → `uv sync` → 重启服务。
 
 ### 管理服务
 
-查看状态：
-
 ```bash
+# 查看状态
 sudo systemctl status starsummary-bot
 ```
 
-重启：
-
 ```bash
+# 重启
 sudo systemctl restart starsummary-bot
 ```
 
-停止：
-
 ```bash
+# 停止
 sudo systemctl stop starsummary-bot
 ```
 
-查看日志：
-
 ```bash
+# 查看实时日志
 journalctl -u starsummary-bot -f
 ```
 
-查看最近 50 行日志：
+```bash
+# 查看最近 50 行日志
+journalctl -u starsummary-bot -n 50 --no-pager
+```
+
+### 完全卸载
+
+如需从 VPS 上彻底移除 StarSummary：
 
 ```bash
-journalctl -u starsummary-bot -n 50 --no-pager
+# 停止并删除 systemd 服务
+sudo systemctl stop starsummary-bot
+sudo systemctl disable starsummary-bot
+sudo rm /etc/systemd/system/starsummary-bot.service
+sudo systemctl daemon-reload
+```
+
+```bash
+# 删除 crontab 定时任务
+crontab -l | grep -v 'starsummary-managed' | crontab -
+```
+
+```bash
+# 删除项目目录
+rm -rf ~/StarSummary
+```
+
+```bash
+# 可选：删除 uv 和 yt-dlp 的软链接
+sudo rm -f /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/yt-dlp
 ```
 
 ## Whisper 模型选择
