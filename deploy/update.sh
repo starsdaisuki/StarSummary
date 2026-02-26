@@ -13,6 +13,12 @@ RESET='\033[0m'
 ok()   { echo -e "   ${GREEN}✓ $1${RESET}"; }
 step() { echo -e "\n${CYAN}${BOLD}$1  $2${RESET}"; }
 
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+else
+    SUDO="sudo"
+fi
+
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SERVICE_NAME="starsummary-bot"
 
@@ -32,10 +38,10 @@ ok "依赖同步完成"
 
 # 重启服务
 step "🔄" "重启服务..."
-sudo systemctl restart "${SERVICE_NAME}"
+$SUDO systemctl restart "${SERVICE_NAME}"
 sleep 2
 
-if sudo systemctl is-active --quiet "${SERVICE_NAME}"; then
+if $SUDO systemctl is-active --quiet "${SERVICE_NAME}"; then
     ok "Bot 已重启"
 else
     echo -e "   \033[91m✗ 重启失败，查看日志: journalctl -u ${SERVICE_NAME} -n 20\033[0m"
@@ -44,6 +50,6 @@ fi
 
 # 显示状态
 step "📊" "当前状态"
-sudo systemctl status "${SERVICE_NAME}" --no-pager -l
+$SUDO systemctl status "${SERVICE_NAME}" --no-pager -l
 
 echo ""

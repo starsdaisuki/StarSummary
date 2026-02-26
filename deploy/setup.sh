@@ -27,6 +27,15 @@ err()  { echo -e "   ${RED}✗ $1${RESET}"; }
 step() { echo -e "\n${CYAN}${BOLD}$1  $2${RESET}"; }
 
 # ─────────────────────────────────────────────
+# root 检测：root 用户不需要 sudo
+# ─────────────────────────────────────────────
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+else
+    SUDO="sudo"
+fi
+
+# ─────────────────────────────────────────────
 # 自动 clone：如果不在项目目录中
 # ─────────────────────────────────────────────
 _find_project_dir() {
@@ -54,7 +63,7 @@ if [[ -z "${PROJECT_DIR}" ]]; then
     step "📦" "Clone StarSummary..."
 
     if ! command -v git &>/dev/null; then
-        sudo apt-get update -qq && sudo apt-get install -y git
+        $SUDO apt-get update -qq && $SUDO apt-get install -y git
     fi
 
     if [[ -d "${DEFAULT_DIR}" && -f "${DEFAULT_DIR}/pyproject.toml" ]]; then
@@ -98,7 +107,7 @@ fi
 # ─────────────────────────────────────────────
 step "📦" "安装系统依赖..."
 
-sudo apt-get update -qq
+$SUDO apt-get update -qq
 
 # Python 3.12+
 if command -v python3.12 &>/dev/null; then
@@ -111,17 +120,17 @@ elif command -v python3 &>/dev/null; then
         ok "Python ${PY_VER} 已安装"
     else
         warn "Python ${PY_VER} 版本过低，尝试安装 3.12..."
-        sudo apt-get install -y software-properties-common
-        sudo add-apt-repository -y ppa:deadsnakes/ppa
-        sudo apt-get update -qq
-        sudo apt-get install -y python3.12 python3.12-venv python3.12-dev
+        $SUDO apt-get install -y software-properties-common
+        $SUDO add-apt-repository -y ppa:deadsnakes/ppa
+        $SUDO apt-get update -qq
+        $SUDO apt-get install -y python3.12 python3.12-venv python3.12-dev
         ok "Python 3.12 安装完成"
     fi
 else
-    sudo apt-get install -y software-properties-common
-    sudo add-apt-repository -y ppa:deadsnakes/ppa
-    sudo apt-get update -qq
-    sudo apt-get install -y python3.12 python3.12-venv python3.12-dev
+    $SUDO apt-get install -y software-properties-common
+    $SUDO add-apt-repository -y ppa:deadsnakes/ppa
+    $SUDO apt-get update -qq
+    $SUDO apt-get install -y python3.12 python3.12-venv python3.12-dev
     ok "Python 3.12 安装完成"
 fi
 
@@ -129,7 +138,7 @@ fi
 if command -v ffmpeg &>/dev/null; then
     ok "ffmpeg 已安装"
 else
-    sudo apt-get install -y ffmpeg
+    $SUDO apt-get install -y ffmpeg
     ok "ffmpeg 安装完成"
 fi
 
@@ -137,12 +146,12 @@ fi
 if command -v yt-dlp &>/dev/null; then
     ok "yt-dlp 已安装"
 else
-    sudo apt-get install -y pipx 2>/dev/null || true
+    $SUDO apt-get install -y pipx 2>/dev/null || true
     if command -v pipx &>/dev/null; then
         pipx install yt-dlp
     else
-        sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-        sudo chmod a+rx /usr/local/bin/yt-dlp
+        $SUDO curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+        $SUDO chmod a+rx /usr/local/bin/yt-dlp
     fi
     ok "yt-dlp 安装完成"
 fi
@@ -240,7 +249,7 @@ step "🚀" "配置 systemd 服务..."
 
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
-sudo tee "${SERVICE_FILE}" > /dev/null <<SVCEOF
+$SUDO tee "${SERVICE_FILE}" > /dev/null <<SVCEOF
 [Unit]
 Description=StarSummary Telegram Bot
 After=network.target
@@ -258,8 +267,8 @@ RestartSec=10
 WantedBy=multi-user.target
 SVCEOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable "${SERVICE_NAME}"
+$SUDO systemctl daemon-reload
+$SUDO systemctl enable "${SERVICE_NAME}"
 ok "systemd 服务已安装并设为开机自启"
 
 # ─────────────────────────────────────────────
@@ -275,7 +284,7 @@ CRON_MARKER="# starsummary-managed"
 # 添加新的定时任务
 (crontab -l 2>/dev/null || true; cat <<CRONEOF
 0 3 * * 1 $(command -v yt-dlp || echo /usr/local/bin/yt-dlp) -U >/dev/null 2>&1 ${CRON_MARKER}
-0 4 * * * sudo systemctl restart ${SERVICE_NAME} >/dev/null 2>&1 ${CRON_MARKER}
+0 4 * * * $SUDO systemctl restart ${SERVICE_NAME} >/dev/null 2>&1 ${CRON_MARKER}
 CRONEOF
 ) | crontab -
 
@@ -287,10 +296,10 @@ ok "每天 04:00 自动重启 Bot"
 # ─────────────────────────────────────────────
 step "▶️" "启动服务..."
 
-sudo systemctl restart "${SERVICE_NAME}"
+$SUDO systemctl restart "${SERVICE_NAME}"
 sleep 2
 
-if sudo systemctl is-active --quiet "${SERVICE_NAME}"; then
+if $SUDO systemctl is-active --quiet "${SERVICE_NAME}"; then
     ok "Bot 已启动并运行中"
 else
     err "启动失败，查看日志: journalctl -u ${SERVICE_NAME} -n 20"
