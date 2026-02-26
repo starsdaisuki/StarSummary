@@ -26,6 +26,7 @@ class Config:
     # 输出
     output_dir: str = "./star_summary_output"
     keep_audio: bool = False
+    copy: bool = False
 
     # API Keys (从环境变量读取)
     dashscope_api_key: str = ""

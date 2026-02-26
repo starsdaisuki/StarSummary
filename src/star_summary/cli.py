@@ -2,8 +2,11 @@
 
 import argparse
 import os
+import re
 import shutil
+import subprocess
 import sys
+from datetime import datetime
 
 from star_summary import __version__
 from star_summary.config import Config
@@ -27,18 +30,38 @@ def _check_system_deps() -> None:
         log_info("(Only needed for downloading from URLs)")
 
 
+def _sanitize_title(title: str) -> str:
+    """简化标题：取前30字符，去掉特殊符号，空格换下划线"""
+    title = title[:30]
+    title = re.sub(r'[\\/:*?"<>|.\n\r\t]', '', title)
+    title = title.strip()
+    title = re.sub(r'\s+', '_', title)
+    return title or "untitled"
+
+
+def _build_output_dir(base_dir: str, title: str) -> tuple[str, str]:
+    """构建按日期分组的输出目录，返回 (output_dir, file_prefix)"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    time_stamp = datetime.now().strftime("%H%M%S")
+    safe_title = _sanitize_title(title)
+    file_prefix = f"{safe_title}_{time_stamp}"
+    output_dir = os.path.join(base_dir, today)
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir, file_prefix
+
+
 def _save_results(
     transcript: TranscriptResult,
     summary: SummaryResult | None,
     output_dir: str,
+    file_prefix: str,
     source: str,
-) -> None:
-    """保存转录和总结结果到文件"""
+) -> str:
+    """保存转录和总结结果到文件，返回 transcript 文件的绝对路径"""
     log_step("💾", "Saving results...")
-    os.makedirs(output_dir, exist_ok=True)
 
     # 1. transcript.txt - 纯文本（带元信息头部注释）
-    transcript_path = os.path.join(output_dir, "transcript.txt")
+    transcript_path = os.path.join(output_dir, f"{file_prefix}_transcript.txt")
     with open(transcript_path, "w", encoding="utf-8") as f:
         f.write(f"# Source: {source}\n")
         f.write(f"# Engine: {transcript.engine}\n")
@@ -51,27 +74,40 @@ def _save_results(
         f.write(f"# Transcribe time: {transcript.transcribe_time:.1f}s\n")
         f.write("# " + "─" * 50 + "\n\n")
         f.write(transcript.text)
-    log_success(f"Transcript → {transcript_path}")
+    log_success(f"Transcript → {os.path.abspath(transcript_path)}")
 
-    # 2. transcript_timed.txt - 带时间戳
-    timed_path = os.path.join(output_dir, "transcript_timed.txt")
+    # 2. timed.txt - 带时间戳
+    timed_path = os.path.join(output_dir, f"{file_prefix}_timed.txt")
     with open(timed_path, "w", encoding="utf-8") as f:
         for seg in transcript.segments:
             start = format_time(seg.start)
             end = format_time(seg.end)
             f.write(f"[{start} → {end}]  {seg.text}\n")
-    log_success(f"Timed transcript → {timed_path}")
+    log_success(f"Timed transcript → {os.path.abspath(timed_path)}")
 
     # 3. summary.txt - AI 总结（仅 --summarize 时）
     if summary and summary.text:
-        summary_path = os.path.join(output_dir, "summary.txt")
+        summary_path = os.path.join(output_dir, f"{file_prefix}_summary.txt")
         with open(summary_path, "w", encoding="utf-8") as f:
             f.write(f"# Source: {source}\n")
             f.write(f"# Model: {summary.model}\n")
             f.write(f"# Summarize time: {summary.summarize_time:.1f}s\n")
             f.write("# " + "─" * 50 + "\n\n")
             f.write(summary.text)
-        log_success(f"Summary → {summary_path}")
+        log_success(f"Summary → {os.path.abspath(summary_path)}")
+
+    return os.path.abspath(transcript_path)
+
+
+def _copy_to_clipboard(text: str) -> None:
+    """复制文本到系统剪贴板（macOS pbcopy）"""
+    try:
+        proc = subprocess.run(
+            ["pbcopy"], input=text.encode("utf-8"), check=True,
+        )
+        log_success("Transcript copied to clipboard")
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        log_warn("Failed to copy to clipboard (pbcopy not available)")
 
 
 def _print_preview(transcript: TranscriptResult, summary: SummaryResult | None) -> None:
@@ -100,6 +136,7 @@ def _build_config(args: argparse.Namespace) -> Config:
         cookies_from_browser=args.cookies_from_browser,
         output_dir=args.output or "./star_summary_output",
         keep_audio=args.keep_audio,
+        copy=args.copy,
     )
 
 
@@ -118,6 +155,7 @@ Examples:
   %(prog)s audio.mp3 --summarize
   %(prog)s "https://..." -s -o ~/summaries/
   %(prog)s "https://v.douyin.com/xxx" -cb chrome
+  %(prog)s audio.mp3 --copy
         """,
     )
 
@@ -173,6 +211,11 @@ Examples:
         action="store_true",
         help="Keep downloaded audio file after transcription",
     )
+    parser.add_argument(
+        "-C", "--copy",
+        action="store_true",
+        help="Copy transcript to clipboard (macOS pbcopy)",
+    )
 
     args = parser.parse_args()
 
@@ -187,9 +230,6 @@ Examples:
 
     # ── 检查系统依赖 ──
     _check_system_deps()
-
-    # ── 准备输出目录 ──
-    os.makedirs(config.output_dir, exist_ok=True)
 
     # ── Step 1: 下载/获取音频 ──
     from star_summary.downloader import get_downloader
@@ -250,14 +290,20 @@ Examples:
             summary = summarizer.summarize(transcript.text)
 
     # ── Step 4: 保存结果 ──
+    title = download_result.title or "untitled"
     source = download_result.title or config.input
-    _save_results(transcript, summary, config.output_dir, source)
+    output_dir, file_prefix = _build_output_dir(config.output_dir, title)
+    transcript_path = _save_results(transcript, summary, output_dir, file_prefix, source)
 
-    # ── Step 5: 打印预览 ──
+    # ── Step 5: 复制到剪贴板 ──
+    if config.copy:
+        _copy_to_clipboard(transcript.text)
+
+    # ── Step 6: 打印预览 ──
     _print_preview(transcript, summary)
 
     # ── Done ──
-    print(f"\n{_C.GREEN}{_C.BOLD}  ✦ All done! Files saved to: {config.output_dir}/ ✦{_C.RESET}\n")
+    print(f"\n{_C.GREEN}{_C.BOLD}  ✦ All done! Files saved to: {os.path.abspath(output_dir)}/ ✦{_C.RESET}\n")
 
 
 if __name__ == "__main__":
