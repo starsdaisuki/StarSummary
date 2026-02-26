@@ -173,18 +173,8 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     step "⚙️" "配置引导"
     echo ""
 
-    # DASHSCOPE_API_KEY
-    echo -e "  ${BOLD}1/3${RESET} 🔑 请输入阿里云百炼 API Key (DASHSCOPE_API_KEY):"
-    read -r -p "      " DASHSCOPE_KEY
-    if [[ -n "${DASHSCOPE_KEY}" ]]; then
-        ok "已保存"
-    else
-        warn "已跳过（Paraformer 引擎将不可用）"
-    fi
-    echo ""
-
-    # TELEGRAM_BOT_TOKEN
-    echo -e "  ${BOLD}2/3${RESET} 🤖 请输入 Telegram Bot Token:"
+    # TELEGRAM_BOT_TOKEN（必填）
+    echo -e "  ${BOLD}1/4${RESET} 🤖 请输入 Telegram Bot Token:"
     read -r -p "      " TG_TOKEN
     if [[ -n "${TG_TOKEN}" ]]; then
         ok "已保存"
@@ -194,10 +184,20 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     fi
     echo ""
 
+    # DASHSCOPE_API_KEY（可选）
+    echo -e "  ${BOLD}2/4${RESET} ${DIM}（可选）${RESET}🔑 请输入阿里云百炼 API Key（Paraformer 转录引擎，直接回车跳过）:"
+    read -r -p "      " DASHSCOPE_KEY
+    if [[ -n "${DASHSCOPE_KEY}" ]]; then
+        ok "已保存"
+    else
+        echo -e "   ${DIM}⏭ 已跳过${RESET}"
+    fi
+    echo ""
+
     # ALLOWED_USERS（可选）
     ALLOWED_USERS=""
     while true; do
-        echo -e "  ${DIM}（可选）${RESET}👤 请输入允许使用 Bot 的 Telegram 用户 ID（多个用逗号分隔，直接回车跳过）:"
+        echo -e "  ${BOLD}3/4${RESET} ${DIM}（可选）${RESET}👤 请输入允许使用 Bot 的 Telegram 用户 ID（多个用逗号分隔，直接回车跳过）:"
         read -r -p "      " ALLOWED_USERS
         if [[ -n "${ALLOWED_USERS}" ]]; then
             ok "已保存"
@@ -214,8 +214,8 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     done
     echo ""
 
-    # DEEPSEEK_API_KEY (可选)
-    echo -e "  ${DIM}（可选）${RESET}💬 请输入 DeepSeek API Key（直接回车跳过）:"
+    # DEEPSEEK_API_KEY（可选）
+    echo -e "  ${BOLD}4/4${RESET} ${DIM}（可选）${RESET}💬 请输入 DeepSeek API Key（AI 总结功能，直接回车跳过）:"
     read -r -p "      " DEEPSEEK_KEY
     if [[ -n "${DEEPSEEK_KEY}" ]]; then
         ok "已保存"
@@ -224,11 +224,11 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     fi
     echo ""
 
-    # 写入 .env
+    # 写入 .env（只写入非空值）
     {
         echo "# StarSummary 配置"
-        echo "DASHSCOPE_API_KEY=${DASHSCOPE_KEY}"
         echo "TELEGRAM_BOT_TOKEN=${TG_TOKEN}"
+        [[ -n "${DASHSCOPE_KEY}" ]] && echo "DASHSCOPE_API_KEY=${DASHSCOPE_KEY}"
         [[ -n "${ALLOWED_USERS}" ]] && echo "ALLOWED_TELEGRAM_USERS=${ALLOWED_USERS}"
         [[ -n "${DEEPSEEK_KEY}" ]] && echo "DEEPSEEK_API_KEY=${DEEPSEEK_KEY}"
     } > "${ENV_FILE}"
