@@ -162,7 +162,7 @@ SSH 到 VPS 后直接运行：
 bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/StarSummary/main/deploy/setup.sh)
 ```
 
-脚本会自动 clone 仓库、安装依赖、交互式配置 API Key、创建 systemd 服务、配置 crontab 定时任务（每周更新 yt-dlp、每天重启 Bot）。
+脚本会自动 clone 仓库 → 安装 uv/ffmpeg/yt-dlp → 用 `uv python install 3.12` 安装 Python → 交互式配置 API Key → 创建 systemd 服务 → 配置 crontab 定时任务。兼容 Debian 12 和 Ubuntu 22/24。
 
 ### 手动 clone 后部署
 

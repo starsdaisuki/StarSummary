@@ -103,63 +103,18 @@ if [[ "${ID}" != "ubuntu" && "${ID}" != "debian" && "${ID_LIKE}" != *"debian"* ]
 fi
 
 # ─────────────────────────────────────────────
-# 2. 安装系统依赖
+# 2. 安装系统依赖（仅 ffmpeg, git, curl）
 # ─────────────────────────────────────────────
 step "📦" "安装系统依赖..."
 
 $SUDO apt-get update -qq
-
-# Python 3.12+
-if command -v python3.12 &>/dev/null; then
-    ok "Python 3.12 已安装"
-elif command -v python3 &>/dev/null; then
-    PY_VER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-    PY_MAJOR=$(echo "$PY_VER" | cut -d. -f1)
-    PY_MINOR=$(echo "$PY_VER" | cut -d. -f2)
-    if [[ "$PY_MAJOR" -ge 3 && "$PY_MINOR" -ge 12 ]]; then
-        ok "Python ${PY_VER} 已安装"
-    else
-        warn "Python ${PY_VER} 版本过低，尝试安装 3.12..."
-        $SUDO apt-get install -y software-properties-common
-        $SUDO add-apt-repository -y ppa:deadsnakes/ppa
-        $SUDO apt-get update -qq
-        $SUDO apt-get install -y python3.12 python3.12-venv python3.12-dev
-        ok "Python 3.12 安装完成"
-    fi
-else
-    $SUDO apt-get install -y software-properties-common
-    $SUDO add-apt-repository -y ppa:deadsnakes/ppa
-    $SUDO apt-get update -qq
-    $SUDO apt-get install -y python3.12 python3.12-venv python3.12-dev
-    ok "Python 3.12 安装完成"
-fi
-
-# ffmpeg
-if command -v ffmpeg &>/dev/null; then
-    ok "ffmpeg 已安装"
-else
-    $SUDO apt-get install -y ffmpeg
-    ok "ffmpeg 安装完成"
-fi
-
-# yt-dlp
-if command -v yt-dlp &>/dev/null; then
-    ok "yt-dlp 已安装"
-else
-    $SUDO apt-get install -y pipx 2>/dev/null || true
-    if command -v pipx &>/dev/null; then
-        pipx install yt-dlp
-    else
-        $SUDO curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-        $SUDO chmod a+rx /usr/local/bin/yt-dlp
-    fi
-    ok "yt-dlp 安装完成"
-fi
+$SUDO apt-get install -y ffmpeg git curl
+ok "ffmpeg, git, curl 已就绪"
 
 # ─────────────────────────────────────────────
 # 3. 安装 uv
 # ─────────────────────────────────────────────
-step "🔧" "检查 uv..."
+step "🔧" "安装 uv..."
 
 if command -v uv &>/dev/null; then
     ok "uv 已安装: $(uv --version)"
@@ -170,7 +125,27 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 4. 安装 Python 依赖
+# 4. 用 uv 安装 Python 3.12
+# ─────────────────────────────────────────────
+step "🐍" "安装 Python 3.12..."
+
+uv python install 3.12
+ok "Python 3.12 已就绪 ($(uv python find 3.12))"
+
+# ─────────────────────────────────────────────
+# 5. 安装 yt-dlp
+# ─────────────────────────────────────────────
+step "📥" "安装 yt-dlp..."
+
+if command -v yt-dlp &>/dev/null; then
+    ok "yt-dlp 已安装"
+else
+    uv tool install yt-dlp
+    ok "yt-dlp 安装完成"
+fi
+
+# ─────────────────────────────────────────────
+# 6. 安装 Python 依赖
 # ─────────────────────────────────────────────
 step "📚" "安装 Python 依赖..."
 
@@ -179,7 +154,7 @@ uv sync
 ok "依赖安装完成"
 
 # ─────────────────────────────────────────────
-# 5. 交互式配置引导
+# 7. 交互式配置引导
 # ─────────────────────────────────────────────
 if [[ ! -f "${ENV_FILE}" ]]; then
     step "⚙️" "配置引导"
@@ -243,7 +218,7 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# 6. 安装 systemd 服务
+# 8. 安装 systemd 服务
 # ─────────────────────────────────────────────
 step "🚀" "配置 systemd 服务..."
 
@@ -272,7 +247,7 @@ $SUDO systemctl enable "${SERVICE_NAME}"
 ok "systemd 服务已安装并设为开机自启"
 
 # ─────────────────────────────────────────────
-# 7. 配置 crontab 定时任务
+# 9. 配置 crontab 定时任务
 # ─────────────────────────────────────────────
 step "⏰" "配置定时任务..."
 
@@ -292,7 +267,7 @@ ok "每周一 03:00 自动更新 yt-dlp"
 ok "每天 04:00 自动重启 Bot"
 
 # ─────────────────────────────────────────────
-# 8. 启动服务
+# 10. 启动服务
 # ─────────────────────────────────────────────
 step "▶️" "启动服务..."
 
