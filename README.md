@@ -154,7 +154,9 @@ star_summary_output/
 
 ## VPS 部署（Telegram Bot）
 
-### 一行命令部署
+支持 Debian 12、Ubuntu 22/24，可用 root 或普通用户运行。
+
+### 一键部署
 
 SSH 到 VPS 后直接运行：
 
@@ -162,21 +164,74 @@ SSH 到 VPS 后直接运行：
 bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/StarSummary/main/deploy/setup.sh)
 ```
 
-脚本会自动 clone 仓库 → 安装 uv/ffmpeg/yt-dlp → 用 `uv python install 3.12` 安装 Python → 交互式配置 API Key → 创建 systemd 服务 → 配置 crontab 定时任务。兼容 Debian 12 和 Ubuntu 22/24。
+脚本会自动完成以下步骤：
+
+1. Clone 仓库到 `~/StarSummary`
+2. 安装系统依赖（ffmpeg、git、curl）
+3. 安装 uv 并用 `uv python install 3.12` 安装 Python
+4. 安装 yt-dlp（通过 `uv tool install`）
+5. 将 uv、yt-dlp 软链接到 `/usr/local/bin/`（解决 systemd PATH 问题）
+6. 安装 Python 项目依赖（`uv sync`）
+7. 交互式引导配置 API Key，写入 `.env`
+8. 创建 systemd 服务并设为开机自启
+9. 配置 crontab 定时任务（自动更新 yt-dlp、每日重启 Bot）
+10. 启动 Bot
 
 ### 手动 clone 后部署
 
 ```bash
 git clone https://github.com/starsdaisuki/StarSummary.git ~/StarSummary
+```
+
+```bash
 cd ~/StarSummary
+```
+
+```bash
 bash deploy/setup.sh
+```
+
+### 修改配置
+
+部署完成后，如果需要修改 API Key 或其他配置：
+
+```bash
+nano ~/StarSummary/.env
+```
+
+`.env` 文件内容示例：
+
+```
+DASHSCOPE_API_KEY=your-dashscope-key
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+ALLOWED_TELEGRAM_USERS=123456789,987654321
+DEEPSEEK_API_KEY=your-deepseek-key
+```
+
+| 配置项 | 说明 | 必填 |
+|--------|------|------|
+| `DASHSCOPE_API_KEY` | 阿里云百炼 API Key（Paraformer 转录引擎） | 推荐 |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token（从 @BotFather 获取） | 是 |
+| `ALLOWED_TELEGRAM_USERS` | 允许使用的用户 ID，逗号分隔（留空则所有人可用） | 否 |
+| `DEEPSEEK_API_KEY` | DeepSeek API Key（AI 总结功能） | 否 |
+
+修改后重启服务生效：
+
+```bash
+sudo systemctl restart starsummary-bot
 ```
 
 ### 后续更新
 
 ```bash
+cd ~/StarSummary
+```
+
+```bash
 bash deploy/update.sh
 ```
+
+会自动 `git pull` → `uv sync` → 重启服务。
 
 ### 管理服务
 
@@ -202,6 +257,12 @@ sudo systemctl stop starsummary-bot
 
 ```bash
 journalctl -u starsummary-bot -f
+```
+
+查看最近 50 行日志：
+
+```bash
+journalctl -u starsummary-bot -n 50 --no-pager
 ```
 
 ## Whisper 模型选择
