@@ -133,8 +133,12 @@ star_summary_output/
 ## VPS 部署（Telegram Bot）
 
 ```bash
-# 首次部署
-git clone <repo> StarSummary && cd StarSummary
+# 一行命令部署（SSH 到 VPS 后直接运行）
+bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/StarSummary/main/deploy/setup.sh)
+
+# 或者手动 clone 后部署
+git clone https://github.com/starsdaisuki/StarSummary.git ~/StarSummary
+cd ~/StarSummary
 bash deploy/setup.sh
 
 # 后续更新
@@ -147,7 +151,7 @@ sudo systemctl stop starsummary-bot       # 停止
 journalctl -u starsummary-bot -f          # 看日志
 ```
 
-`setup.sh` 会自动完成：安装系统依赖 → 交互式配置 API Key → 创建 systemd 服务 → 配置 crontab 定时任务。
+`setup.sh` 会自动完成：clone 仓库 → 安装系统依赖 → 交互式配置 API Key → 创建 systemd 服务 → 配置 crontab 定时任务（每周更新 yt-dlp、每天重启 Bot）。
 
 ## Whisper 模型选择
 
