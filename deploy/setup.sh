@@ -194,14 +194,24 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     fi
     echo ""
 
-    # ALLOWED_USERS
-    echo -e "  ${BOLD}3/3${RESET} 👤 请输入允许使用 Bot 的 Telegram 用户 ID（多个用逗号分隔）:"
-    read -r -p "      " ALLOWED_USERS
-    if [[ -n "${ALLOWED_USERS}" ]]; then
-        ok "已保存"
-    else
-        warn "未设置，所有人均可使用 Bot"
-    fi
+    # ALLOWED_USERS（可选）
+    ALLOWED_USERS=""
+    while true; do
+        echo -e "  ${DIM}（可选）${RESET}👤 请输入允许使用 Bot 的 Telegram 用户 ID（多个用逗号分隔，直接回车跳过）:"
+        read -r -p "      " ALLOWED_USERS
+        if [[ -n "${ALLOWED_USERS}" ]]; then
+            ok "已保存"
+            break
+        else
+            echo -e -n "   ${YELLOW}⚠ 未设置白名单，任何人都可以使用此 Bot，是否继续？[y/N] ${RESET}"
+            read -r CONFIRM
+            if [[ "${CONFIRM}" =~ ^[Yy]$ ]]; then
+                echo -e "   ${DIM}⏭ 已跳过${RESET}"
+                break
+            fi
+            echo ""
+        fi
+    done
     echo ""
 
     # DEEPSEEK_API_KEY (可选)
@@ -215,13 +225,13 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     echo ""
 
     # 写入 .env
-    cat > "${ENV_FILE}" <<ENVEOF
-# StarSummary 配置
-DASHSCOPE_API_KEY=${DASHSCOPE_KEY}
-TELEGRAM_BOT_TOKEN=${TG_TOKEN}
-ALLOWED_TELEGRAM_USERS=${ALLOWED_USERS}
-DEEPSEEK_API_KEY=${DEEPSEEK_KEY}
-ENVEOF
+    {
+        echo "# StarSummary 配置"
+        echo "DASHSCOPE_API_KEY=${DASHSCOPE_KEY}"
+        echo "TELEGRAM_BOT_TOKEN=${TG_TOKEN}"
+        [[ -n "${ALLOWED_USERS}" ]] && echo "ALLOWED_TELEGRAM_USERS=${ALLOWED_USERS}"
+        [[ -n "${DEEPSEEK_KEY}" ]] && echo "DEEPSEEK_API_KEY=${DEEPSEEK_KEY}"
+    } > "${ENV_FILE}"
 
     chmod 600 "${ENV_FILE}"
     ok "配置已写入 ${ENV_FILE}"

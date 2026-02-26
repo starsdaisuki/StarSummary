@@ -57,6 +57,31 @@ _URL_PATTERN = re.compile(r'https?://\S+')
 _MAX_MSG_LEN = 4000
 
 
+def _get_allowed_users() -> set[int]:
+    """读取 ALLOWED_TELEGRAM_USERS 环境变量，返回允许的用户 ID 集合。空集合表示不限制。"""
+    raw = os.environ.get("ALLOWED_TELEGRAM_USERS", "").strip()
+    if not raw:
+        return set()
+    ids = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.add(int(part))
+    return ids
+
+
+async def _check_user(update: Update) -> bool:
+    """检查用户是否有权限。白名单为空时允许所有人。"""
+    allowed = _get_allowed_users()
+    if not allowed:
+        return True
+    user_id = update.effective_user.id if update.effective_user else 0
+    if user_id in allowed:
+        return True
+    await update.message.reply_text("⛔ 你没有权限使用此 Bot。")
+    return False
+
+
 def _is_url(text: str) -> bool:
     return bool(_URL_PATTERN.match(text.strip()))
 
@@ -112,6 +137,9 @@ async def cmd_help(update: Update, context) -> None:
 
 async def handle_url(update: Update, context) -> None:
     """处理用户发送的 URL"""
+    if not await _check_user(update):
+        return
+
     url = update.message.text.strip()
 
     if not _is_url(url):
@@ -153,6 +181,9 @@ async def handle_url(update: Update, context) -> None:
 
 async def handle_file(update: Update, context) -> None:
     """处理用户发送的音频/视频文件"""
+    if not await _check_user(update):
+        return
+
     message = update.message
     file_obj = message.audio or message.video or message.document or message.voice
 
