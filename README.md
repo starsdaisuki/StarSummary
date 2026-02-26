@@ -17,30 +17,38 @@ Video/Audio → Transcript → Summary
 
 ### 前置依赖
 
-```bash
-# macOS
-brew install yt-dlp ffmpeg
+macOS:
 
-# Ubuntu/Debian
+```bash
+brew install yt-dlp ffmpeg
+```
+
+Ubuntu/Debian:
+
+```bash
 sudo apt install ffmpeg
 pip install yt-dlp
 ```
 
 ### 安装项目
 
-```bash
-# 基本安装
-uv sync
+基本安装：
 
-# 安装全部可选功能（whisper + 总结）
+```bash
+uv sync
+```
+
+安装全部可选功能（whisper + 总结）：
+
+```bash
 uv sync --extra all
 ```
 
 ### 配置 API Key
 
-在项目根目录创建 `.env` 文件（或 export 环境变量）：
+在项目根目录创建 `.env` 文件：
 
-```bash
+```
 DASHSCOPE_API_KEY=your-key        # Paraformer（默认引擎）
 DEEPSEEK_API_KEY=your-key         # DeepSeek（总结功能）
 TELEGRAM_BOT_TOKEN=your-token     # Telegram Bot
@@ -50,32 +58,45 @@ TELEGRAM_BOT_TOKEN=your-token     # Telegram Bot
 
 ### 1. CLI 命令行
 
+无参数进入交互模式：
+
 ```bash
-# 无参数进入交互模式
 starsummary
+```
 
-# 基本用法
+转录视频链接：
+
+```bash
 starsummary "https://www.bilibili.com/video/BV1xx..."
+```
 
-# 使用本地 whisper 引擎（无需 API Key）
+使用本地 whisper 引擎（无需 API Key）：
+
+```bash
 starsummary video.mp4 --engine whisper
+```
 
-# 指定 whisper 模型大小
+指定 whisper 模型大小：
+
+```bash
 starsummary audio.mp3 -e whisper -m large-v3
+```
 
-# 指定语言
-starsummary video.mp4 --lang zh
+启用 AI 总结：
 
-# 启用 AI 总结
+```bash
 starsummary "https://www.youtube.com/watch?v=xxx" --summarize
+```
 
-# 使用 cookies 下载（抖音等需要登录的平台）
+使用 cookies 下载（抖音等需要登录的平台）：
+
+```bash
 starsummary "https://v.douyin.com/xxx" -cb chrome
+```
 
-# 指定输出目录并保留音频
-starsummary "https://..." -o ~/summaries/ --keep-audio
+转录后复制到剪贴板：
 
-# 转录后复制到剪贴板
+```bash
 starsummary audio.mp3 --copy
 ```
 
@@ -89,8 +110,9 @@ starsummary-web
 
 ### 3. Telegram Bot
 
+需要先在 `.env` 中配置 `TELEGRAM_BOT_TOKEN`：
+
 ```bash
-# 需要先配置 TELEGRAM_BOT_TOKEN
 starsummary-bot
 ```
 
@@ -132,26 +154,55 @@ star_summary_output/
 
 ## VPS 部署（Telegram Bot）
 
-```bash
-# 一行命令部署（SSH 到 VPS 后直接运行）
-bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/StarSummary/main/deploy/setup.sh)
+### 一行命令部署
 
-# 或者手动 clone 后部署
+SSH 到 VPS 后直接运行：
+
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/StarSummary/main/deploy/setup.sh)
+```
+
+脚本会自动 clone 仓库、安装依赖、交互式配置 API Key、创建 systemd 服务、配置 crontab 定时任务（每周更新 yt-dlp、每天重启 Bot）。
+
+### 手动 clone 后部署
+
+```bash
 git clone https://github.com/starsdaisuki/StarSummary.git ~/StarSummary
 cd ~/StarSummary
 bash deploy/setup.sh
-
-# 后续更新
-bash deploy/update.sh
-
-# 管理服务
-sudo systemctl status starsummary-bot     # 查看状态
-sudo systemctl restart starsummary-bot    # 重启
-sudo systemctl stop starsummary-bot       # 停止
-journalctl -u starsummary-bot -f          # 看日志
 ```
 
-`setup.sh` 会自动完成：clone 仓库 → 安装系统依赖 → 交互式配置 API Key → 创建 systemd 服务 → 配置 crontab 定时任务（每周更新 yt-dlp、每天重启 Bot）。
+### 后续更新
+
+```bash
+bash deploy/update.sh
+```
+
+### 管理服务
+
+查看状态：
+
+```bash
+sudo systemctl status starsummary-bot
+```
+
+重启：
+
+```bash
+sudo systemctl restart starsummary-bot
+```
+
+停止：
+
+```bash
+sudo systemctl stop starsummary-bot
+```
+
+查看日志：
+
+```bash
+journalctl -u starsummary-bot -f
+```
 
 ## Whisper 模型选择
 
