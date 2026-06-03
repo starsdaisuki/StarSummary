@@ -160,8 +160,8 @@ def _interactive_mode() -> Config:
         log_warn("Please enter a URL or file path")
 
     # ASR 引擎
-    engine_input = _prompt("🎙️", "ASR 引擎 [paraformer/whisper]", "paraformer")
-    engine = engine_input if engine_input in ("paraformer", "whisper") else "paraformer"
+    engine_input = _prompt("🎙️", "ASR 引擎 [groq/paraformer/whisper]", "groq")
+    engine = engine_input if engine_input in ("groq", "paraformer", "whisper") else "groq"
 
     # AI 总结
     summarize_input = _prompt("🤖", "AI 总结? [y/N]", "N")
@@ -189,7 +189,8 @@ def _parse_args() -> argparse.Namespace:
 Examples:
   %(prog)s "https://www.bilibili.com/video/BV1xx..."
   %(prog)s "https://www.youtube.com/watch?v=xxx" --engine whisper --model large-v3
-  %(prog)s video.mp4 --lang zh
+  %(prog)s recording.m4a --lang zh             # 默认 groq 引擎（云端 whisper-large-v3）
+  %(prog)s video.mp4 --engine paraformer       # 超长音频用阿里云实时兜底
   %(prog)s audio.mp3 --summarize
   %(prog)s "https://..." -s -o ~/summaries/
   %(prog)s "https://v.douyin.com/xxx" -cb chrome
@@ -203,9 +204,9 @@ Examples:
     )
     parser.add_argument(
         "-e", "--engine",
-        default="paraformer",
-        choices=["paraformer", "whisper"],
-        help="ASR engine (default: paraformer)",
+        default="groq",
+        choices=["groq", "paraformer", "whisper"],
+        help="ASR engine (default: groq — cloud whisper-large-v3, free tier)",
     )
     parser.add_argument(
         "-m", "--model",
@@ -303,6 +304,7 @@ def main() -> None:
         engine=config.engine,
         model=config.whisper_model,
         api_key=config.dashscope_api_key,
+        groq_api_key=config.groq_api_key,
     )
 
     try:

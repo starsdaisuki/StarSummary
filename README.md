@@ -10,7 +10,7 @@
 
 - **多平台支持** — YouTube、Bilibili、抖音、西瓜视频、微博、Twitter/X 等所有 yt-dlp 支持的站点
 - **本地文件** — 支持 mp3、wav、flac、m4a、ogg、mp4、mkv、avi、mov、webm
-- **双 ASR 引擎** — 阿里云 Paraformer（云端，速度快）/ faster-whisper（本地，无需联网）
+- **三 ASR 引擎** — Groq whisper-large-v3（默认，云端高质量，免费额度、注册不要信用卡）/ 阿里云 Paraformer（实时，超长音频兜底）/ faster-whisper（本地，无需联网）
 - **AI 总结** — DeepSeek 一键总结，支持简洁摘要、详细总结、提取要点、自定义风格
 - **带时间戳** — 输出 `[MM:SS.ss → MM:SS.ss]` 格式的时间轴文本
 - **VPS 一键部署** — 一条命令部署 Telegram Bot 到服务器，支持 Debian / Ubuntu
@@ -67,9 +67,10 @@ cp .env.example .env
 然后编辑填入你的 Key：
 
 ```
-TELEGRAM_BOT_TOKEN=your-token     # Telegram Bot（Bot 模式必填）
-DASHSCOPE_API_KEY=your-key        # 阿里云百炼（Paraformer 转录引擎）
-DEEPSEEK_API_KEY=your-key         # DeepSeek（AI 总结功能）
+GROQ_API_KEY=your-key             # Groq（默认转录引擎 whisper-large-v3，免费额度：https://console.groq.com）
+DASHSCOPE_API_KEY=your-key        # 阿里云百炼（Paraformer 引擎，超长音频兜底，可选）
+DEEPSEEK_API_KEY=your-key         # DeepSeek（AI 总结功能，可选）
+TELEGRAM_BOT_TOKEN=your-token     # Telegram Bot（仅 Bot 模式必填）
 ```
 
 ## 使用方式
@@ -86,6 +87,12 @@ starsummary
 
 ```bash
 starsummary "https://www.bilibili.com/video/BV1xx..."
+```
+
+默认就是 Groq 引擎（云端 whisper-large-v3），直接转录音频/链接：
+
+```bash
+starsummary recording.m4a -l zh
 ```
 
 使用本地 whisper 引擎（无需 API Key）：
@@ -141,7 +148,7 @@ starsummary-bot
 | 参数 | 说明 |
 |------|------|
 | `input` | 视频/音频 URL 或本地文件路径 |
-| `-e, --engine` | ASR 引擎：`paraformer`（默认）或 `whisper` |
+| `-e, --engine` | ASR 引擎：`groq`（默认）/ `paraformer` / `whisper` |
 | `-m, --model` | Whisper 模型大小（仅 whisper 引擎），默认 `small` |
 | `-l, --lang` | 语言代码（zh/en/ja），默认自动检测 |
 | `-s, --summarize` | 启用 LLM 总结 |
@@ -207,7 +214,8 @@ nano ~/StarSummary/.env
 | 配置项 | 说明 | 必填 |
 |--------|------|------|
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot Token（从 @BotFather 获取） | 是 |
-| `DASHSCOPE_API_KEY` | 阿里云百炼 API Key（Paraformer 转录引擎） | 推荐 |
+| `GROQ_API_KEY` | Groq API Key（默认转录引擎 whisper-large-v3，免费额度） | 推荐 |
+| `DASHSCOPE_API_KEY` | 阿里云百炼 API Key（Paraformer 引擎，超长音频兜底） | 可选 |
 | `ALLOWED_TELEGRAM_USERS` | 允许使用的用户 ID，逗号分隔（留空则所有人可用） | 否 |
 | `DEEPSEEK_API_KEY` | DeepSeek API Key（AI 总结功能） | 否 |
 
@@ -279,6 +287,16 @@ rm -rf ~/StarSummary
 sudo rm -f /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/yt-dlp
 ```
 
+## 转录引擎选择
+
+| 引擎 | 位置 | 质量 | 说明 |
+|------|------|------|------|
+| `groq` | 云端 | ★★★★★ | **默认**。whisper-large-v3，免费额度（注册不要信用卡）。自动转 16kHz 单声道，>25MB 文件用 ffmpeg 分片转录再合并时间戳，通吃长短音频 |
+| `paraformer` | 云端 | ★★★ | 阿里云实时识别，需 `DASHSCOPE_API_KEY`；直传本地文件、无单文件大小限制，可作超长音频兜底 |
+| `whisper` | 本地 | ★★★★ | faster-whisper，无需联网；需 `uv sync --extra whisper`，吃 CPU |
+
+> Groq 免费额度：7200 音频秒/小时、单文件 25MB（本工具自动分片绕过 25MB 限制）。需要更高额度可在 Groq 控制台免费升级 Dev tier（加张卡，额度 ×10）。
+
 ## Whisper 模型选择
 
 仅在使用 `--engine whisper` 时有效：
@@ -309,6 +327,7 @@ StarSummary/
 │   │   └── local.py
 │   ├── transcriber/             # 转录模块
 │   │   ├── base.py
+│   │   ├── groq.py              # Groq whisper-large-v3（默认，含 >25MB 分片）
 │   │   ├── paraformer.py
 │   │   └── whisper_local.py
 │   └── summarizer/              # 总结模块

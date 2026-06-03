@@ -11,7 +11,7 @@ class Config:
     input: str = ""
 
     # ASR 引擎
-    engine: str = "paraformer"         # paraformer / whisper
+    engine: str = "groq"               # groq / paraformer / whisper
     whisper_model: str = "small"       # tiny/base/small/medium/large-v2/large-v3
     language: str | None = None        # zh/en/ja，None 为自动检测
 
@@ -29,10 +29,13 @@ class Config:
     copy: bool = False
 
     # API Keys (从环境变量读取)
+    groq_api_key: str = ""
     dashscope_api_key: str = ""
 
     def __post_init__(self) -> None:
         """从环境变量补充未设置的值"""
+        if not self.groq_api_key:
+            self.groq_api_key = os.environ.get("GROQ_API_KEY", "")
         if not self.dashscope_api_key:
             self.dashscope_api_key = os.environ.get("DASHSCOPE_API_KEY", "")
         if not self.deepseek_api_key:

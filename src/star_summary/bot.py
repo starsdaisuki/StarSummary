@@ -98,6 +98,7 @@ def _run_transcribe(audio_path: str) -> tuple[str, str]:
         engine=config.engine,
         model=config.whisper_model,
         api_key=config.dashscope_api_key,
+        groq_api_key=config.groq_api_key,
     )
 
     transcript = transcriber.transcribe(audio_path, language=config.language)

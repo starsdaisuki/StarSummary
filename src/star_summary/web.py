@@ -51,6 +51,7 @@ def _run_pipeline(
         engine=config.engine,
         model=config.whisper_model,
         api_key=config.dashscope_api_key,
+        groq_api_key=config.groq_api_key,
     )
 
     try:
@@ -117,8 +118,8 @@ def _build_ui() -> gr.Blocks:
                     lines=1,
                 )
                 engine_radio = gr.Radio(
-                    choices=["paraformer", "whisper"],
-                    value="paraformer",
+                    choices=["groq", "paraformer", "whisper"],
+                    value="groq",
                     label="ASR 引擎",
                 )
                 lang_dropdown = gr.Dropdown(
