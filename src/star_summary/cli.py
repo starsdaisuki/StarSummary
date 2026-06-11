@@ -140,44 +140,211 @@ def _build_config_from_args(args: argparse.Namespace) -> Config:
     )
 
 
-def _prompt(icon: str, msg: str, default: str = "") -> str:
-    """带图标的交互提示，支持默认值"""
-    hint = f" ({default})" if default else ""
+def _prompt_line(text: str) -> str:
+    """单行输入，处理 EOF / Ctrl-C。"""
     try:
-        return input(f"  {icon} {msg}{hint}: ").strip()
+        return input(text).strip()
     except (EOFError, KeyboardInterrupt):
         print()
         sys.exit(0)
 
 
-def _interactive_mode() -> Config:
-    """交互模式：逐步提示用户输入参数，返回 Config"""
-    # 输入源（必填）
-    while True:
-        source = _prompt("📎", "视频链接或文件路径")
-        if source:
-            break
-        log_warn("Please enter a URL or file path")
+# ──────────────────── 交互模式：媒体文件夹批量转录 ────────────────────
 
-    # ASR 引擎
-    engine_input = _prompt("🎙️", "ASR 引擎 [groq/paraformer/whisper]", "groq")
-    engine = engine_input if engine_input in ("groq", "paraformer", "whisper") else "groq"
+AUDIO_EXTS = {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".oga", ".aac", ".opus", ".wma"}
+VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".flv", ".ts"}
+MEDIA_EXTS = AUDIO_EXTS | VIDEO_EXTS
 
-    # AI 总结
-    summarize_input = _prompt("🤖", "AI 总结? [y/N]", "N")
-    summarize = summarize_input.lower() in ("y", "yes")
 
-    # 复制到剪贴板
-    copy_input = _prompt("📋", "复制到剪贴板? [Y/n]", "Y")
-    copy = copy_input.lower() not in ("n", "no")
+def _media_kind(path: str) -> str:
+    ext = os.path.splitext(path)[1].lower()
+    if ext in AUDIO_EXTS:
+        return "audio"
+    if ext in VIDEO_EXTS:
+        return "video"
+    return "unknown"
 
-    print()
-    return Config(
-        input=source,
-        engine=engine,
-        summarize=summarize,
-        copy=copy,
+
+def _media_icon(path: str) -> str:
+    return "🎬" if _media_kind(path) == "video" else "🎵"
+
+
+def _find_media(directory: str) -> list[str]:
+    """目录下所有支持的音频/视频文件（按名排序）。"""
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return []
+    out = [
+        os.path.join(directory, n)
+        for n in names
+        if os.path.isfile(os.path.join(directory, n))
+        and os.path.splitext(n)[1].lower() in MEDIA_EXTS
+    ]
+    return sorted(out)
+
+
+def _parse_selection(choice: str, items: list) -> list:
+    """解析 '1 3 5' / '1-3' / 逗号混合；去重保序。"""
+    picked = []
+    for part in choice.replace(",", " ").split():
+        if "-" in part:
+            try:
+                a, b = part.split("-", 1)
+                picked += [items[i - 1] for i in range(int(a), int(b) + 1) if 1 <= i <= len(items)]
+            except ValueError:
+                continue
+        else:
+            try:
+                i = int(part)
+                if 1 <= i <= len(items):
+                    picked.append(items[i - 1])
+            except ValueError:
+                continue
+    seen, uniq = set(), []
+    for x in picked:
+        if x not in seen:
+            seen.add(x)
+            uniq.append(x)
+    return uniq
+
+
+def _transcribe_and_save(transcriber, summarizer, path: str, out_dir: str | None, language: str | None) -> None:
+    """转录单个媒体文件并写出 <stem>.txt / .timed.txt [/ .summary.txt]。"""
+    size_mb = os.path.getsize(path) / (1024 * 1024)
+    name = os.path.basename(path)
+    print(f"\n{_media_icon(path)} {name}（{size_mb:.1f} MB）")
+
+    transcript = transcriber.transcribe(path, language=language)
+
+    stem = os.path.splitext(name)[0]
+    base = os.path.join(out_dir or os.path.dirname(path), stem)
+
+    with open(base + ".txt", "w", encoding="utf-8") as f:
+        f.write(transcript.text + "\n")
+    with open(base + ".timed.txt", "w", encoding="utf-8") as f:
+        for seg in transcript.segments:
+            f.write(f"[{format_time(seg.start)} → {format_time(seg.end)}]  {seg.text}\n")
+
+    print(f"  {_C.GREEN}✅ 完成! {len(transcript.segments)} 段, {len(transcript.text)} 字 → {base}.txt{_C.RESET}")
+
+    if summarizer is not None:
+        summary = summarizer.summarize(transcript.text)
+        if summary and summary.text:
+            with open(base + ".summary.txt", "w", encoding="utf-8") as f:
+                f.write(summary.text + "\n")
+            print(f"  {_C.GREEN}📋 总结 → {base}.summary.txt{_C.RESET}")
+
+
+def _interactive_batch() -> None:
+    """无参数时的引导模式：扫描文件夹 → 选择 → 批量转录（默认 Groq whisper-large-v3）。"""
+    from star_summary.transcriber import get_transcriber
+
+    print(f"\n{_C.MAGENTA}{_C.BOLD}⭐ StarSummary 交互模式{_C.RESET}")
+    print(f"{_C.DIM}{'─' * 40}{_C.RESET}")
+
+    # 1. 文件夹（或直接一个文件）
+    print("\n📁 音频/视频在哪个文件夹？")
+    print(f"   {_C.DIM}直接回车 = 当前目录（{os.getcwd()}）{_C.RESET}")
+    target = _prompt_line("   路径: ")
+    target = os.path.expanduser(target) if target else os.getcwd()
+
+    single = False
+    if os.path.isfile(target) and os.path.splitext(target)[1].lower() in MEDIA_EXTS:
+        files, single = [target], True
+    elif os.path.isdir(target):
+        files = _find_media(target)
+        if not files:
+            log_error(f"{target} 下没有音频/视频文件")
+            log_info(f"支持: {', '.join(sorted(MEDIA_EXTS))}")
+            sys.exit(1)
+    else:
+        log_error(f"路径不存在或格式不支持: {target}")
+        sys.exit(1)
+
+    # 2. 列出 + 选择
+    if single:
+        selected = files
+        print(f"\n{_media_icon(files[0])} 选中: {os.path.basename(files[0])}")
+    else:
+        na = sum(1 for f in files if _media_kind(f) == "audio")
+        nv = sum(1 for f in files if _media_kind(f) == "video")
+        parts = [p for p in (f"{na} 音频" if na else "", f"{nv} 视频" if nv else "") if p]
+        print(f"\n📋 找到 {len(files)} 个文件（{' · '.join(parts)}）:")
+        for i, p in enumerate(files, 1):
+            sz = os.path.getsize(p) / (1024 * 1024)
+            print(f"   {i}. {_media_icon(p)} {os.path.basename(p)}（{sz:.1f} MB）")
+
+        print("\n🔢 要转哪些？（直接回车 = 全部）")
+        print(f"   {_C.DIM}支持: 1 3 5  /  1-3  /  all  /  按类型: audio  video{_C.RESET}")
+        choice = _prompt_line("   选择: ").lower()
+        if not choice or choice == "all":
+            selected = files
+        elif choice in ("audio", "音频", "video", "视频"):
+            tk = {"音频": "audio", "视频": "video"}.get(choice, choice)
+            selected = [f for f in files if _media_kind(f) == tk]
+            if not selected:
+                log_error(f"没有 {choice} 类型的文件")
+                sys.exit(1)
+        else:
+            selected = _parse_selection(choice, files)
+            if not selected:
+                log_error("无效选择")
+                sys.exit(1)
+
+    # 3. 语言
+    print("\n🌐 语言？（直接回车 = zh 中文，中英混说也 OK）")
+    print(f"   {_C.DIM}也可填: en  ja  auto{_C.RESET}")
+    lang = _prompt_line("   语言: ").lower() or "zh"
+    if lang == "auto":
+        lang = None
+
+    # 4. 输出目录
+    print("\n📝 转录文本输出到哪？")
+    print(f"   {_C.DIM}直接回车 = 和源文件同目录{_C.RESET}")
+    out_dir = _prompt_line("   路径: ")
+    if out_dir:
+        out_dir = os.path.expanduser(out_dir)
+        os.makedirs(out_dir, exist_ok=True)
+    else:
+        out_dir = None
+
+    # 5. 可选 AI 总结
+    do_summary = _prompt_line("\n🤖 顺便给每篇做 AI 总结? [y/N]: ").lower() in ("y", "yes")
+
+    # 准备引擎 + 总结器
+    config = Config()
+    transcriber = get_transcriber(
+        engine=config.engine,
+        model=config.whisper_model,
+        api_key=config.dashscope_api_key,
+        groq_api_key=config.groq_api_key,
     )
+    summarizer = None
+    if do_summary:
+        if not config.deepseek_api_key:
+            log_warn("没有 DEEPSEEK_API_KEY，跳过总结")
+        else:
+            from star_summary.summarizer import get_summarizer
+            summarizer = get_summarizer(api_key=config.deepseek_api_key)
+
+    # 开跑
+    print(f"\n{_C.CYAN}{_C.BOLD}🚀 开始处理 {len(selected)} 个文件...{_C.RESET}")
+    failures = []
+    for path in selected:
+        try:
+            _transcribe_and_save(transcriber, summarizer, path, out_dir, lang)
+        except Exception as exc:
+            failures.append((os.path.basename(path), str(exc)))
+            log_error(f"失败: {os.path.basename(path)}: {exc}")
+            log_info("继续下一个...")
+
+    if failures:
+        print(f"\n{_C.YELLOW}⚠️ 完成，但有 {len(failures)} 个失败:{_C.RESET}")
+        for n, e in failures:
+            print(f"   - {n}: {e}")
+        sys.exit(1)
+    print(f"\n{_C.GREEN}{_C.BOLD}🎉 全部完成！共 {len(selected)} 个文件{_C.RESET}")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -272,12 +439,12 @@ def main() -> None:
 
     _print_banner()
 
-    # 无参数 → 交互模式，有参数 → CLI 模式
+    # 无参数 → 交互引导模式（文件夹批量转录），有参数 → CLI 模式
     if len(sys.argv) == 1:
-        config = _interactive_mode()
-    else:
-        args = _parse_args()
-        config = _build_config_from_args(args)
+        _interactive_batch()
+        return
+    args = _parse_args()
+    config = _build_config_from_args(args)
 
     # ── 检查系统依赖 ──
     _check_system_deps()
