@@ -140,16 +140,14 @@ uv python install 3.12
 ok "Python 3.12 已就绪 ($(uv python find 3.12))"
 
 # ─────────────────────────────────────────────
-# 5. 安装 yt-dlp + 软链接到 /usr/local/bin/
+# 5. 安装 yt-dlp（带 curl_cffi）+ 软链接到 /usr/local/bin/
 # ─────────────────────────────────────────────
-step "📥" "安装 yt-dlp..."
+# curl_cffi 提供 --impersonate（浏览器 TLS 指纹），B站反爬风控(HTTP 412)必须靠它绕过。
+# 用 --upgrade 保证已装的旧 yt-dlp 也会补上 curl_cffi，幂等可重复执行。
+step "📥" "安装 yt-dlp（含 curl_cffi）..."
 
-if command -v yt-dlp &>/dev/null; then
-    ok "yt-dlp 已安装"
-else
-    uv tool install yt-dlp
-    ok "yt-dlp 安装完成"
-fi
+uv tool install --upgrade yt-dlp --with curl_cffi
+ok "yt-dlp 安装/升级完成（含 curl_cffi）"
 
 # 确保 systemd 等环境也能找到 yt-dlp
 if [[ -f "$HOME/.local/bin/yt-dlp" ]]; then

@@ -20,10 +20,10 @@
 
 ### 前置依赖
 
-macOS:
+ffmpeg —— macOS:
 
 ```bash
-brew install yt-dlp ffmpeg
+brew install ffmpeg
 ```
 
 Ubuntu/Debian:
@@ -32,8 +32,10 @@ Ubuntu/Debian:
 sudo apt install ffmpeg
 ```
 
+yt-dlp（两系统通用）。`--with curl_cffi` 是**下载 B 站必需**：B 站用 TLS 指纹反爬，需要 `--impersonate` 模拟真浏览器才能绕过 HTTP 412：
+
 ```bash
-pip install yt-dlp
+uv tool install yt-dlp --with curl_cffi
 ```
 
 ### 安装项目

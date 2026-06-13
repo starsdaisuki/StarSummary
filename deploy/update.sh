@@ -36,6 +36,11 @@ step "📚" "同步依赖..."
 uv sync
 ok "依赖同步完成"
 
+# 确保 yt-dlp 带 curl_cffi（B站 412 风控绕过依赖 --impersonate）
+step "📥" "更新 yt-dlp（含 curl_cffi）..."
+uv tool install --upgrade yt-dlp --with curl_cffi
+ok "yt-dlp 已更新（含 curl_cffi）"
+
 # 重启服务
 step "🔄" "重启服务..."
 $SUDO systemctl restart "${SERVICE_NAME}"
