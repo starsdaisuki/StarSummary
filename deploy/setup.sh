@@ -2,11 +2,11 @@
 # StarSummary VPS 一键部署脚本
 # 用法:
 #   bash deploy/setup.sh                     # 在项目目录中运行
-#   bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/StarSummary/main/deploy/setup.sh)
+#   bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/starsummary/main/deploy/setup.sh)
 
 set -e
 
-REPO_URL="https://github.com/starsdaisuki/StarSummary.git"
+REPO_URL="https://github.com/starsdaisuki/starsummary.git"
 DEFAULT_DIR="$HOME/StarSummary"
 
 # ─────────────────────────────────────────────

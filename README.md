@@ -41,7 +41,7 @@ uv tool install yt-dlp --with curl_cffi
 ### 安装项目
 
 ```bash
-git clone https://github.com/starsdaisuki/StarSummary.git
+git clone https://github.com/starsdaisuki/starsummary.git
 ```
 
 ```bash
@@ -188,7 +188,7 @@ star_summary_output/
 SSH 到 VPS 后直接运行：
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/StarSummary/main/deploy/setup.sh)
+bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/starsummary/main/deploy/setup.sh)
 ```
 
 脚本会自动完成：clone 仓库 → 安装 uv/Python 3.12/ffmpeg/yt-dlp → 安装依赖 → 交互式配置 API Key → 创建 systemd 服务 → 配置定时任务 → 启动 Bot。
@@ -196,7 +196,7 @@ bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/StarSummary/main/
 ### 手动 clone 后部署
 
 ```bash
-git clone https://github.com/starsdaisuki/StarSummary.git ~/StarSummary
+git clone https://github.com/starsdaisuki/starsummary.git ~/StarSummary
 ```
 
 ```bash

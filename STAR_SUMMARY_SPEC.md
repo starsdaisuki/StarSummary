@@ -1,25 +1,37 @@
-# StarSummary（星语）项目规范文档
+# StarSummary（星语）项目文档
 
-> 本文档用于指导 Claude Code 构建完整项目。请严格按照以下规范实现。
+> 本文档面向项目维护者，用于快速理解公开架构、接口与部署约束。
+>
+> 最后更新：2026-02-26
 
-## 一、项目概述
+## 一、项目简介
 
-StarSummary（星语）是一个 CLI 工具，用于将视频/音频转录为文字并可选地进行 AI 总结。
+StarSummary（星语）是一个视频/音频转文字工具，支持 B站、YouTube 等平台的视频链接或本地文件，通过 ASR（语音识别）转录为文字，可选 LLM 总结。
 
-**核心流程**：`输入(URL/本地文件) → 下载音频 → 语音转文字(ASR) → [可选] LLM 总结 → 输出文件`
+**核心流程**：`输入(URL/本地文件) → 下载音频(yt-dlp) → 语音转文字(ASR) → [可选] LLM 总结 → 输出文件`
 
-**运行环境**：macOS (Apple Silicon M4 Pro)，使用 `uv` 管理 Python 项目。
+**三合一入口**：
+
+```
+CLI 交互模式 ─┐
+Gradio Web  ──┤──→ downloader → transcriber → summarizer
+Telegram Bot ─┘
+```
+
+**仓库地址**：https://github.com/starsdaisuki/starsummary
 
 ## 二、技术栈
 
 - **语言**：Python 3.12+，使用 type hints
 - **包管理**：uv（非 pip），pyproject.toml 管理依赖
-- **系统依赖**：yt-dlp、ffmpeg（通过 brew 安装）
+- **系统依赖**：yt-dlp、ffmpeg
 - **ASR 方案**：
-  - 云端（默认）：阿里云百炼 Paraformer，通过 `dashscope` SDK
-  - 本地（备选）：`faster-whisper`，CTranslate2 后端
+  - 云端（默认）：阿里云百炼 Paraformer，通过 `dashscope` SDK，模型 `fun-asr-realtime`
+  - 本地（备选）：`faster-whisper`，CTranslate2 后端，通过 `--engine whisper` 切换
 - **LLM 总结**（可选）：DeepSeek API，通过 `openai` SDK（兼容接口）
 - **下载**：yt-dlp，通过 subprocess 调用
+- **Web UI**：Gradio
+- **Telegram Bot**：python-telegram-bot
 
 ## 三、项目结构
 
@@ -27,338 +39,344 @@ StarSummary（星语）是一个 CLI 工具，用于将视频/音频转录为文
 StarSummary/
 ├── pyproject.toml
 ├── README.md
+├── STAR_SUMMARY_SPEC.md          ← 本文件
+├── .env                           # API Keys（不入库）
+├── deploy/
+│   ├── setup.sh                   # VPS 一键部署脚本
+│   └── update.sh                  # 快速更新脚本
 ├── src/
 │   └── star_summary/
-│       ├── __init__.py              # 版本号等
-│       ├── cli.py                   # CLI 入口，argparse，流程编排
-│       ├── config.py                # 配置管理（环境变量、默认值）
-│       ├── utils.py                 # 工具函数（日志美化、时间格式化）
-│       ├── models.py                # 数据模型（dataclass）
+│       ├── __init__.py
+│       ├── cli.py                 # CLI 入口，argparse + 交互模式 + 流程编排
+│       ├── web.py                 # Gradio Web UI 入口
+│       ├── bot.py                 # Telegram Bot 入口
+│       ├── config.py              # 配置管理（环境变量、默认值）
+│       ├── utils.py               # 工具函数（日志美化、时间格式化）
+│       ├── models.py              # 数据模型（dataclass）
 │       │
-│       ├── downloader/              # 下载模块
-│       │   ├── __init__.py          # 导出 get_downloader()
-│       │   ├── base.py              # AbstractDownloader 基类
-│       │   ├── ytdlp.py            # yt-dlp 实现（YouTube/B站等）
-│       │   └── local.py             # 本地文件处理（直接返回路径）
+│       ├── downloader/            # 下载模块
+│       │   ├── __init__.py        # 导出 get_downloader() 工厂函数
+│       │   ├── base.py            # AbstractDownloader 基类
+│       │   ├── ytdlp.py           # yt-dlp 实现（YouTube/B站等）
+│       │   └── local.py           # 本地文件处理
 │       │
-│       ├── transcriber/             # 语音转文字模块
-│       │   ├── __init__.py          # 导出 get_transcriber()
-│       │   ├── base.py              # AbstractTranscriber 基类
-│       │   ├── paraformer.py        # 阿里云 Paraformer（默认）
-│       │   └── whisper_local.py     # 本地 faster-whisper（备选）
+│       ├── transcriber/           # 语音转文字模块（核心）
+│       │   ├── __init__.py        # 导出 get_transcriber() 工厂函数
+│       │   ├── base.py            # AbstractTranscriber 基类
+│       │   ├── paraformer.py      # 阿里云 Paraformer（默认）
+│       │   └── whisper_local.py   # 本地 faster-whisper（备选）
 │       │
-│       └── summarizer/              # LLM 总结模块
-│           ├── __init__.py          # 导出 get_summarizer()
-│           ├── base.py              # AbstractSummarizer 基类
-│           └── deepseek.py          # DeepSeek API 实现
+│       └── summarizer/            # LLM 总结模块
+│           ├── __init__.py        # 导出 get_summarizer() 工厂函数
+│           ├── base.py            # AbstractSummarizer 基类
+│           └── deepseek.py        # DeepSeek API 实现
 ```
 
 ## 四、数据模型（models.py）
 
-使用 dataclass 定义统一的数据结构：
+所有模块通过统一的 dataclass 传递数据：
 
 ```python
-from dataclasses import dataclass, field
-
 @dataclass
 class Segment:
-    """单个语音片段"""
     start: float          # 开始时间（秒）
     end: float            # 结束时间（秒）
     text: str             # 文本内容
 
 @dataclass
 class TranscriptResult:
-    """转录结果 —— 所有 transcriber 统一返回此类型"""
     text: str                          # 完整文本
     segments: list[Segment]            # 带时间戳的片段列表
-    language: str = "unknown"          # 检测到的语言
-    language_confidence: float = 0.0   # 语言检测置信度
+    language: str = "unknown"
+    language_confidence: float = 0.0
     duration: float = 0.0             # 音频总时长（秒）
     transcribe_time: float = 0.0      # 转录耗时（秒）
     engine: str = ""                   # 使用的引擎名称
 
 @dataclass
 class DownloadResult:
-    """下载结果"""
     audio_path: str       # 音频文件路径
-    title: str = ""       # 视频标题（如果能获取到）
-    duration: float = 0.0 # 时长（秒）
+    title: str = ""       # 视频标题
+    duration: float = 0.0
 
-@dataclass 
+@dataclass
 class SummaryResult:
-    """总结结果"""
-    text: str                  # 总结文本
-    model: str = ""            # 使用的模型
-    summarize_time: float = 0.0  # 耗时
+    text: str
+    model: str = ""
+    summarize_time: float = 0.0
 ```
 
-## 五、各模块实现细节
+## 五、模块化架构与工厂模式
 
-### 5.1 配置管理（config.py）
+每个模块遵循相同的设计模式：
 
-从环境变量读取配置，支持以下环境变量：
+1. `base.py` 定义抽象基类（AbstractXxx），规定统一接口
+2. 具体实现各写一个文件，实现抽象接口
+3. `__init__.py` 提供工厂函数（get_xxx），根据参数选择实现
+4. CLI/Web/Bot 调用工厂函数获取实例，不关心底层实现
 
-```
-DASHSCOPE_API_KEY     - 阿里云百炼 API Key（Paraformer 用）
-DEEPSEEK_API_KEY      - DeepSeek API Key（总结用）
-STAR_SUMMARY_COOKIES  - cookies 文件路径
-```
-
-提供一个 Config dataclass，CLI 解析完参数后构造 Config 传给各模块。
-
-### 5.2 日志工具（utils.py）
-
-提供带 ANSI 颜色的美化日志函数：
+**示例：transcriber 模块**
 
 ```python
-def log_step(emoji: str, msg: str): ...   # 步骤标题，cyan + bold
-def log_info(msg: str): ...                # 详细信息，dim
-def log_success(msg: str): ...             # 成功，green ✓
-def log_warn(msg: str): ...                # 警告，yellow ⚠
-def log_error(msg: str): ...               # 错误，red ✗
+# transcriber/__init__.py
+def get_transcriber(engine: str = "paraformer", **kwargs) -> AbstractTranscriber:
+    if engine == "paraformer":
+        from .paraformer import ParaformerTranscriber
+        return ParaformerTranscriber(**kwargs)
+    elif engine == "whisper":
+        from .whisper_local import WhisperLocalTranscriber
+        return WhisperLocalTranscriber(**kwargs)
+    else:
+        raise ValueError(f"Unknown engine: {engine}")
 ```
 
-以及时间格式化函数：
+**所有 transcriber 返回统一的 `TranscriptResult`**，CLI 不需要关心是谁干的活。
 
-```python
-def format_time(seconds: float) -> str:
-    """格式化为 MM:SS.ss 或 HH:MM:SS.ss"""
-```
+## 六、各模块技术细节
 
-### 5.3 下载模块（downloader/）
+### 6.1 阿里云 Paraformer（默认 ASR）
 
-**base.py** - 抽象基类：
-
-```python
-from abc import ABC, abstractmethod
-
-class AbstractDownloader(ABC):
-    @abstractmethod
-    def download(self, source: str) -> DownloadResult:
-        """下载音频，返回 DownloadResult"""
-        ...
-```
-
-**ytdlp.py** - yt-dlp 实现：
-
-- 通过 `subprocess.run()` 调用 yt-dlp
-- 支持 `--cookies` 和 `--cookies-from-browser` 参数
-- 只提取音频（`-x --audio-format mp3`）
-- 下载到临时目录（tempfile.mkdtemp）
-- 超时 5 分钟
-- 尝试获取视频标题（通过 yt-dlp 的 `--print title`）
-
-**local.py** - 本地文件处理：
-
-- 验证文件存在且是支持的格式
-- 支持的格式：mp3, wav, flac, aac, ogg, m4a, wma, mp4, mkv, avi, mov, webm, flv, ts
-- 直接返回文件路径，不做复制
-
-**`__init__.py`** - 工厂函数：
-
-```python
-def get_downloader(source: str, **kwargs) -> AbstractDownloader:
-    """根据输入自动判断：URL 用 YtdlpDownloader，本地文件用 LocalDownloader"""
-```
-
-### 5.4 转录模块（transcriber/）—— 最核心
-
-**base.py** - 抽象基类：
-
-```python
-class AbstractTranscriber(ABC):
-    @abstractmethod
-    def transcribe(self, audio_path: str, language: str | None = None) -> TranscriptResult:
-        ...
-```
-
-**paraformer.py** - 阿里云百炼 Paraformer（默认方案）：
-
-- 使用 `dashscope` SDK（pip 包名：`dashscope`）
-- 使用录音文件识别 API（适合我们的场景，非实时流式）
-- 模型名：`paraformer-v2`（16k 采样率通用）或 `paraformer-8k-v2`
-- 支持直接传入本地音频文件路径
-- API Key 从环境变量 `DASHSCOPE_API_KEY` 读取
-
-核心调用方式：
+- SDK：`dashscope`
+- 模型：`fun-asr-realtime`（最新最强），备选 `paraformer-realtime-v2`
+- API Key：环境变量 `DASHSCOPE_API_KEY`，dashscope SDK 自动读取
+- **关键约束**：只接受单声道音频，需用 ffmpeg 预处理：`ffmpeg -i input.mp3 -ac 1 -ar 16000 output.mp3`
+- 区域：默认北京 endpoint，国际 VPS 可用新加坡（需额外配置）
+- 计费：约 ¥0.04/分钟，只对有语音内容的时长计费，新用户 90 天免费额度
 
 ```python
 from dashscope.audio.asr import Recognition
-from http import HTTPStatus
-
 recognition = Recognition(
-    model='paraformer-realtime-v2',
+    model='fun-asr-realtime',
     format='mp3',
     sample_rate=16000,
-    language_hints=['zh', 'en'],  # 支持中英混合
+    language_hints=['zh', 'en'],
+    callback=None,
 )
-result = recognition.call(audio_path)
-
-if result.status_code == HTTPStatus.OK:
-    sentences = result.get_sentence()
-    # sentences 是 list，每个元素有 text、begin_time、end_time
+result = recognition.call('audio.mp3')
+# result.get_sentence() → list of dict with text, begin_time, end_time
 ```
 
-注意事项：
-- 需要先用 ffmpeg 确认/转换音频格式和采样率
-- 如果音频文件较大（>几十MB），考虑先压缩
-- 做好错误处理：API Key 未设置、网络错误、余额不足等
-- 将 dashscope 的返回格式转换为统一的 TranscriptResult
+### 6.2 本地 faster-whisper（备选 ASR）
 
-**whisper_local.py** - 本地 faster-whisper（备选方案）：
-
-- 使用 `faster-whisper` 库
-- 设备：cpu，compute_type：int8（Apple Silicon 兼容性最好）
-- **CPU 线程数限制为总核心数的一半**（避免过热！之前用全部核心导致 90°C+）
-- 支持 model_size 参数：tiny/base/small/medium/large-v2/large-v3，默认 small（不再默认 medium，避免过热）
+- 设备：CPU，`compute_type=int8`
+- 默认将线程数限制为可用核心数的一半，降低持续负载并保留系统响应性
+- 默认模型为 `small`，需要更高精度时再显式选择更大模型
 - 开启 VAD 过滤（vad_filter=True）跳过静音
 
-**`__init__.py`** - 工厂函数：
+### 6.3 下载模块
 
-```python
-def get_transcriber(engine: str = "paraformer", **kwargs) -> AbstractTranscriber:
-    """
-    engine="paraformer" → ParaformerTranscriber（默认）
-    engine="whisper"    → WhisperLocalTranscriber
-    """
+- **ytdlp.py**：通过 subprocess 调用 yt-dlp，只提取音频（`-x --audio-format mp3`），超时 5 分钟
+- **local.py**：验证文件存在且格式支持，直接返回路径
+- 支持 cookies 参数（`--cookies` / `--cookies-from-browser`）
+
+### 6.4 总结模块
+
+- DeepSeek API，通过 openai SDK，base_url 设为 `https://api.deepseek.com`
+- 模型：`deepseek-chat`，temperature=0.3
+- 文本过长时截断（max_chars=60000）
+- `summarize()` 方法支持自定义 `system_prompt` 参数，不同场景可传入不同风格的 prompt
+- 内置四种总结风格：简洁摘要、详细总结、提取要点、自定义（用户输入 prompt）
+
+### 6.5 Telegram Bot
+
+- **白名单机制**：环境变量 `ALLOWED_TELEGRAM_USERS`，逗号分隔用户 ID
+  - 有值时：只允许白名单用户使用
+  - 为空或未设置时：不做过滤，所有人可用
+- 支持接收 URL 消息和音频/视频文件
+- 文本过长时分段发送或以文件形式发送（>4000 字符）
+- 需 24 小时运行，部署在 VPS 上
+- **Inline Keyboard 总结功能**（需配置 DEEPSEEK_API_KEY）：
+  - 转录完成后显示四个按钮：📋 简洁摘要 / 📝 详细总结 / 🎯 提取要点 / ✨ 自定义
+  - 每个按钮对应不同的 system prompt 风格
+  - "✨ 自定义"：用户发送风格描述（如"用猫娘语气总结"），作为 system prompt 调用 DeepSeek
+  - 通过 `context.user_data` 记住上次自定义风格，下次可复用
+  - 总结完成后自动移除按钮，避免重复点击
+  - 未配置 DEEPSEEK_API_KEY 时不显示总结按钮
+
+## 七、配置说明
+
+### .env 文件
+
+```
+DASHSCOPE_API_KEY=sk-xxx        # 阿里云百炼（必需，Paraformer ASR 用）
+TELEGRAM_BOT_TOKEN=7123:AAFxxx  # TG Bot Token（Bot 功能需要）
+ALLOWED_TELEGRAM_USERS=123,456  # TG 白名单，可选（空=不限制）
+DEEPSEEK_API_KEY=sk-xxx         # DeepSeek（可选，--summarize 用）
 ```
 
-### 5.5 总结模块（summarizer/）
+### 环境变量加载
 
-**deepseek.py** - DeepSeek API：
+- 本地：cli.py / web.py / bot.py 开头通过 `python-dotenv` 的 `load_dotenv()` 加载
+- VPS：systemd 的 `EnvironmentFile` 指令加载
 
-- 使用 `openai` SDK，base_url 设为 `https://api.deepseek.com`
-- 模型：`deepseek-chat`
-- 文本过长时截断（max_chars=60000）
-- system prompt 设定为专业内容总结助手
-- user prompt 要求：先概括核心主题，再分点列出要点
-- temperature=0.3（偏确定性）
-
-### 5.6 CLI 入口（cli.py）
-
-**参数设计**：
+## 八、CLI 参数
 
 ```
 positional:
-  input                 视频/音频 URL 或本地文件路径
+  input                 视频/音频 URL 或本地文件路径（无参数时进入交互模式）
 
 options:
   -e, --engine          ASR 引擎：paraformer（默认）或 whisper
   -m, --model           Whisper 模型大小（仅 whisper 引擎有效），默认 small
   -l, --lang            语言代码（zh/en/ja），默认自动检测
   -s, --summarize       启用 LLM 总结
-  --api-key             DeepSeek API Key（或用环境变量）
+  -C, --copy            转录完成后复制到剪贴板（macOS pbcopy）
   -c, --cookies         cookies 文件路径
-  -cb, --cookies-from-browser  从浏览器读取 cookies（chrome/edge/safari/firefox）
   -o, --output          输出目录，默认 ./star_summary_output/
   --keep-audio          保留下载的音频文件
-  -h, --help            帮助信息
 ```
 
-**主流程伪代码**：
+**交互模式**：不带任何参数运行 `starsummary` 时进入引导式配置，默认值支持一路回车。
 
-```python
-def main():
-    # 1. 打印 banner
-    print("✦ StarSummary (星语) ✦")
-    
-    # 2. 解析参数，构造 Config
-    args = parse_args()
-    
-    # 3. 获取 downloader 并下载
-    downloader = get_downloader(args.input, cookies=..., cookies_from_browser=...)
-    download_result = downloader.download(args.input)
-    
-    # 4. 获取 transcriber 并转录
-    transcriber = get_transcriber(engine=args.engine, model=args.model)
-    transcript = transcriber.transcribe(download_result.audio_path, language=args.lang)
-    
-    # 5. 可选：总结
-    summary = None
-    if args.summarize:
-        summarizer = get_summarizer(api_key=...)
-        summary = summarizer.summarize(transcript.text)
-    
-    # 6. 保存结果
-    save_results(transcript, summary, output_dir=args.output)
-    
-    # 7. 打印预览
-    print_preview(transcript, summary)
-    
-    # 8. 清理临时文件
-    cleanup()
+## 九、输出文件
+
+输出到 `star_summary_output/` 下，按日期分组：
+
+```
+star_summary_output/
+├── 2026-02-26/
+│   ├── 视频标题_143052_transcript.txt      # 纯文本转录
+│   ├── 视频标题_143052_timed.txt           # 带时间戳
+│   └── 视频标题_143052_summary.txt         # AI 总结（可选）
 ```
 
-## 六、输出文件格式
+文件名格式：`{标题简化}_{HHMMSS}_transcript.txt`
 
-保存到 `--output` 指定的目录（默认 `./star_summary_output/`）：
+## 十、部署方式
 
-1. **transcript.txt** - 纯文本转录（带元信息头部注释）
-2. **transcript_timed.txt** - 带时间戳的转录，格式：`[MM:SS.ss → MM:SS.ss]  文本内容`
-3. **summary.txt** - AI 总结（仅 `--summarize` 时生成）
+### 本地 Mac 使用
 
-## 七、pyproject.toml 配置
+```bash
+starsummary                    # 交互模式
+starsummary "URL"              # 直接转录
+starsummary -e whisper "URL"   # 本地引擎
+starsummary -s "URL"           # 带总结
+starsummary -C "URL"           # 转录完复制到剪贴板
+starsummary-web                # Web 界面
+```
+
+### VPS 一键部署（Debian 12）
+
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/starsdaisuki/starsummary/main/deploy/setup.sh)
+```
+
+部署脚本功能：
+- 检测系统环境，安装系统依赖（ffmpeg、git）
+- 通过 uv 安装 Python 3.12 和项目依赖
+- 交互式引导配置 .env（API Key、Bot Token、白名单）
+  - TELEGRAM_BOT_TOKEN 排在第一位（必填）
+  - DASHSCOPE_API_KEY、ALLOWED_TELEGRAM_USERS、DEEPSEEK_API_KEY 均为可选
+  - 空值不写入 .env，保持文件干净
+  - ALLOWED_TELEGRAM_USERS 留空时会二次确认（任何人可用）
+- 创建 systemd 服务，Bot 开机自启 + 后台运行
+
+### systemd 服务配置
+
+```ini
+[Unit]
+Description=StarSummary Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/StarSummary
+EnvironmentFile=/root/StarSummary/.env
+ExecStart=/root/StarSummary/.venv/bin/starsummary-bot
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 服务管理命令
+
+```bash
+systemctl status starsummary-bot   # 查看状态
+systemctl restart starsummary-bot  # 重启
+systemctl stop starsummary-bot     # 停止
+journalctl -u starsummary-bot -f   # 实时日志
+```
+
+### 自动化任务（crontab）
+
+```bash
+0 3 * * 1 ~/.local/bin/uv tool upgrade yt-dlp    # 每周一凌晨 3 点自动更新 yt-dlp
+0 4 * * * systemctl restart starsummary-bot       # 每天凌晨 4 点重启 Bot
+```
+
+### 部署注意事项
+
+- VPS 上 yt-dlp 和 uv 装在 `~/.local/bin/`，需创建软链接到 `/usr/local/bin/` 让 systemd 能找到
+- Debian 12 不支持 Ubuntu PPA，Python 版本通过 `uv python install 3.12` 管理
+- 部署前确认目标网络能够访问 Telegram 与所选 ASR/LLM API
+
+## 十一、扩展指南
+
+### 添加新 ASR 引擎（如讯飞）
+
+1. 新建 `transcriber/xunfei.py`，实现 `AbstractTranscriber` 接口
+2. 在 `transcriber/__init__.py` 工厂函数加一个分支
+3. CLI 的 `--engine` 参数加一个选项
+4. 如果需要新的 API Key，在 setup.sh 引导中加一步
+
+**只需改 2-3 个文件，核心逻辑完全不动。**
+
+### 添加新总结引擎
+
+同理，新建独立 provider 模块，实现 `AbstractSummarizer`，再在工厂函数中注册。
+
+### 添加新平台入口（如 Discord Bot）
+
+新建 `discord_bot.py`，import 现有的 downloader/transcriber/summarizer 模块即可，核心逻辑复用。
+
+## 十二、pyproject.toml 关键配置
 
 ```toml
 [project]
 name = "star-summary"
-version = "0.2.0"
-description = "StarSummary (星语) - Video/Audio → Transcript → Summary"
 requires-python = ">=3.12"
 dependencies = [
     "dashscope>=1.20.0",
+    "python-dotenv",
+    "openai>=1.0.0",
 ]
 
 [project.optional-dependencies]
 whisper = ["faster-whisper>=1.0.0"]
-summarize = ["openai>=1.0.0"]
-all = ["faster-whisper>=1.0.0", "openai>=1.0.0"]
+web = ["gradio"]
+bot = ["python-telegram-bot"]
+all = ["faster-whisper>=1.0.0", "gradio", "python-telegram-bot"]
 
 [project.scripts]
 starsummary = "star_summary.cli:main"
+starsummary-web = "star_summary.web:main"
+starsummary-bot = "star_summary.bot:main"
 ```
 
-注意：
-- `dashscope` 是必需依赖（默认 ASR 引擎）
-- `faster-whisper` 和 `openai` 是可选依赖
-- 配置了 `[project.scripts]` 入口点，安装后可直接使用 `starsummary` 命令
-- 用户安装时：`uv add star-summary` 或 `uv pip install ".[all]"`
+## 十三、已知问题与待办
 
-## 八、错误处理要求
+### 已知问题
+- 抖音链接 yt-dlp 支持不稳定，建议先在 app 保存到本地再用本地文件模式
+- B站经常改接口导致 yt-dlp 失效，需定期更新 yt-dlp
 
-1. **依赖缺失时给清晰提示**：
-   - 使用 whisper 引擎但没装 faster-whisper → 提示 `uv add faster-whisper`
-   - 使用 summarize 但没装 openai → 提示 `uv add openai`
-   - yt-dlp 或 ffmpeg 未安装 → 提示 `brew install yt-dlp ffmpeg`
+### 已完成
+- [x] Telegram Bot Inline Keyboard 总结功能（四种风格 + 自定义）
+- [x] 白名单可选（留空时二次确认）
+- [x] openai 从可选依赖改为必需依赖
+- [x] setup.sh 空值不写入 .env、修复变量名重复 bug
 
-2. **API Key 缺失时友好提示**：
-   - Paraformer 无 DASHSCOPE_API_KEY → 提示设置环境变量，或建议切换到 `--engine whisper`
-   - DeepSeek 无 API Key → 跳过总结并提示
+### 待办
+- [ ] 完善 setup.sh 脚本的区域检测和 PATH 修复逻辑
+- [ ] 支持新加坡 endpoint 配置选项（海外 VPS 优化延迟）
+- [ ] 错误重试机制（网络波动时自动重试）
+- [ ] 结构化日志持久化
+- [ ] 转录失败率和 API 额度监控
+- [ ] 考虑支持更多 ASR 引擎（OpenAI Whisper API、讯飞）
 
-3. **网络错误时**：提示检查网络，建议切换到 `--engine whisper` 本地模式
+## 十四、开发基线
 
-4. **下载失败时**：显示 yt-dlp 的错误信息，建议手动下载后用本地文件模式
-
-## 九、开发步骤建议
-
-请按以下顺序实现：
-
-1. 先创建项目结构和 pyproject.toml
-2. 实现 models.py 和 utils.py（基础设施）
-3. 实现 downloader 模块（最简单）
-4. 实现 transcriber/paraformer.py（默认方案）
-5. 实现 transcriber/whisper_local.py（备选方案）
-6. 实现 summarizer/deepseek.py
-7. 实现 cli.py 串联所有模块
-8. 实现 config.py
-9. 编写 README.md
-10. 测试运行
-
-## 十、代码风格
-
-- 使用 type hints
-- docstring 用中文或英文均可
-- 日志用 utils.py 里的函数，不要用 print 或 logging
-- 异常处理要友好，面向终端用户（不要抛 traceback 给用户看）
-- 变量命名用 snake_case，类名用 PascalCase
+- Python 3.12+，使用 `uv` 管理环境与依赖
+- 部署脚本以 Debian 12 + systemd 为兼容基线
+- 编辑器应忽略 `__pycache__`、`.venv` 与本地 `.env`
