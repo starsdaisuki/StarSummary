@@ -1,0 +1,7 @@
+version = 1
+
+# Historical commit trailers credit an automated public collaborator. This
+# address is not a personal mailbox or repository secret.
+approved_emails = ["noreply@anthropic.com"]
+approved_ips = []
+approved_uuids = []
