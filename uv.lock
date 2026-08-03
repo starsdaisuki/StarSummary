@@ -537,17 +537,21 @@ wheels = [
 
 [[package]]
 name = "dashscope"
-version = "1.25.12"
+version = "1.26.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "certifi" },
     { name = "cryptography" },
+    { name = "httpx" },
+    { name = "httpx-sse" },
     { name = "requests" },
+    { name = "rich" },
+    { name = "typer" },
     { name = "websocket-client" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d9/7a/a1a9d0d293ca2cfabf54eedbea237d4d9e233251477d65c51c77667c407c/dashscope-1.25.12-py3-none-any.whl", hash = "sha256:92e98314bac0ff45b7f32f9120946771a85e614371b397f0874c1e579de60f98", size = 1342605, upload-time = "2026-02-09T09:02:50.82Z" },
+    { url = "https://files.pythonhosted.org/packages/19/6b/054a5d451ff6bd05f388bfc4d65e69261d364e2592447de29e26d5fdee4d/dashscope-1.26.5-py3-none-any.whl", hash = "sha256:95b74d539b6243306401867cf4dfa78a1cf72c0f666572ac63e111d4960b4ef7", size = 1532012, upload-time = "2026-07-31T07:40:49.005Z" },
 ]
 
 [[package]]
@@ -847,6 +851,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b1/df/48c586a5fe32a0f01324ee087459e112ebb7224f646c0b5023f5e79e9956/httpx-0.28.1.tar.gz", hash = "sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc", size = 141406, upload-time = "2024-12-06T15:37:23.222Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl", hash = "sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad", size = 73517, upload-time = "2024-12-06T15:37:21.509Z" },
+]
+
+[[package]]
+name = "httpx-sse"
+version = "0.4.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/4c/751061ffa58615a32c31b2d82e8482be8dd4a89154f003147acee90f2be9/httpx_sse-0.4.3.tar.gz", hash = "sha256:9b1ed0127459a66014aec3c56bebd93da3c1bc8bb6618c8082039a44889a755d", size = 15943, upload-time = "2025-10-10T21:48:22.271Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d2/fd/6668e5aec43ab844de6fc74927e155a3b37bf40d7c3790e49fc0406b6578/httpx_sse-0.4.3-py3-none-any.whl", hash = "sha256:0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc", size = 8960, upload-time = "2025-10-10T21:48:21.158Z" },
 ]
 
 [[package]]
@@ -1861,7 +1874,7 @@ whisper = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dashscope", specifier = ">=1.20.0" },
+    { name = "dashscope", specifier = ">=1.26" },
     { name = "faster-whisper", marker = "extra == 'whisper'", specifier = ">=1.0.0" },
     { name = "gradio", specifier = ">=6.6.0" },
     { name = "openai", specifier = ">=1.0.0" },

@@ -10,7 +10,7 @@
 
 - **多平台支持** — YouTube、Bilibili、抖音、西瓜视频、微博、Twitter/X 等所有 yt-dlp 支持的站点
 - **本地文件** — 支持 mp3、wav、flac、m4a、ogg、mp4、mkv、avi、mov、webm
-- **三 ASR 引擎** — Groq whisper-large-v3（默认，云端高质量，免费额度、注册不要信用卡）/ 阿里云 Paraformer（实时，超长音频兜底）/ faster-whisper（本地，无需联网）
+- **四 ASR 引擎** — 阿里 qwen3-asr-flash（**默认**，中文准确率最高）/ Groq whisper-large-v3（英文够用，免费额度大）/ faster-whisper（本地，无需联网）/ fun-asr-realtime（旧引擎，兼容保留）
 - **AI 总结** — DeepSeek 一键总结，支持简洁摘要、详细总结、提取要点、自定义风格
 - **带时间戳** — 输出 `[MM:SS.ss → MM:SS.ss]` 格式的时间轴文本
 - **VPS 一键部署** — 一条命令部署 Telegram Bot 到服务器，支持 Debian / Ubuntu
@@ -69,8 +69,8 @@ cp .env.example .env
 然后编辑填入你的 Key：
 
 ```
-GROQ_API_KEY=your-key             # Groq（默认转录引擎 whisper-large-v3，免费额度：https://console.groq.com）
-DASHSCOPE_API_KEY=your-key        # 阿里云百炼（Paraformer 引擎，超长音频兜底，可选）
+DASHSCOPE_API_KEY=your-key        # 阿里云百炼（默认引擎 qwen3-asr-flash：https://bailian.console.aliyun.com）
+GROQ_API_KEY=your-key             # Groq（whisper-large-v3，免费额度大：https://console.groq.com，可选）
 DEEPSEEK_API_KEY=your-key         # DeepSeek（AI 总结功能，可选）
 TELEGRAM_BOT_TOKEN=your-token     # Telegram Bot（仅 Bot 模式必填）
 ```
@@ -91,7 +91,7 @@ starsummary
 starsummary "https://www.bilibili.com/video/BV1xx..."
 ```
 
-默认就是 Groq 引擎（云端 whisper-large-v3），直接转录音频/链接：
+默认就是 qwen 引擎（阿里 qwen3-asr-flash），直接转录音频/链接：
 
 ```bash
 starsummary recording.m4a -l zh
@@ -150,7 +150,7 @@ starsummary-bot
 | 参数 | 说明 |
 |------|------|
 | `input` | 视频/音频 URL 或本地文件路径 |
-| `-e, --engine` | ASR 引擎：`groq`（默认）/ `paraformer` / `whisper` |
+| `-e, --engine` | ASR 引擎：`qwen`（默认）/ `groq` / `whisper` / `paraformer` |
 | `-m, --model` | Whisper 模型大小（仅 whisper 引擎），默认 `small` |
 | `-l, --lang` | 语言代码（zh/en/ja），默认自动检测 |
 | `-s, --summarize` | 启用 LLM 总结 |
@@ -216,8 +216,8 @@ nano ~/StarSummary/.env
 | 配置项 | 说明 | 必填 |
 |--------|------|------|
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot Token（从 @BotFather 获取） | 是 |
-| `GROQ_API_KEY` | Groq API Key（默认转录引擎 whisper-large-v3，免费额度） | 推荐 |
-| `DASHSCOPE_API_KEY` | 阿里云百炼 API Key（Paraformer 引擎，超长音频兜底） | 可选 |
+| `DASHSCOPE_API_KEY` | 阿里云百炼 API Key（默认引擎 qwen3-asr-flash） | 推荐 |
+| `GROQ_API_KEY` | Groq API Key（whisper-large-v3 引擎，免费额度大） | 可选 |
 | `ALLOWED_TELEGRAM_USERS` | 允许使用的用户 ID，逗号分隔（留空则所有人可用） | 否 |
 | `DEEPSEEK_API_KEY` | DeepSeek API Key（AI 总结功能） | 否 |
 
@@ -293,11 +293,45 @@ sudo rm -f /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/yt-dlp
 
 | 引擎 | 位置 | 质量 | 说明 |
 |------|------|------|------|
-| `groq` | 云端 | ★★★★★ | **默认**。whisper-large-v3，免费额度（注册不要信用卡）。自动转 16kHz 单声道，>25MB 文件用 ffmpeg 分片转录再合并时间戳，通吃长短音频 |
-| `paraformer` | 云端 | ★★★ | 阿里云实时识别，需 `DASHSCOPE_API_KEY`；直传本地文件、无单文件大小限制，可作超长音频兜底 |
-| `whisper` | 本地 | ★★★★ | faster-whisper，无需联网；需 `uv sync --extra whisper`，吃 CPU |
+| `qwen` | 云端 | ★★★★★ | **默认**。阿里 `qwen3-asr-flash`，中文/歌曲/专业术语准确率显著高于 whisper，且不会在静音段编字幕水印。需 `DASHSCOPE_API_KEY`。API 单次上限 5 分钟，超长音频自动在静音点切片并发转录 |
+| `groq` | 云端 | ★★★ | whisper-large-v3，免费额度大、注册不要信用卡；英文够用，**中文同音词错误多且有幻觉**。>25MB 自动分片 |
+| `whisper` | 本地 | ★★★ | faster-whisper，无需联网；需 `uv sync --extra whisper`，吃 CPU 且发热 |
+| `paraformer` | 云端 | ★★ | 阿里旧实时引擎 `fun-asr-realtime`，兼容保留，新用途请选 `qwen` |
 
 > Groq 免费额度：7200 音频秒/小时、单文件 25MB（本工具自动分片绕过 25MB 限制）。需要更高额度可在 Groq 控制台免费升级 Dev tier（加张卡，额度 ×10）。
+
+### 为什么中文默认换成 qwen
+
+同一段带伴奏的中文歌，两个引擎的同素材对比：
+
+| 正确内容 | `qwen3-asr-flash` | `whisper-large-v3` |
+|---|---|---|
+| 你站在**讲台**上，把难题说得**亮堂** | ✅ | 你站在**墙台**上，把难题说的**两趟** |
+| 像冬天防雨的**装甲** | ✅ | 冬天风雨的**庄稼** |
+| **粉笔灰**落在肩上 | ✅ | **粉笔回**落在肩上 |
+| **慢条斯理**的推理 | ✅ | **满条死里**的推理 |
+| （前奏无人声，应为空） | 不输出 | 凭空补出「**作词 ×××**」 |
+| （片尾静音，应为空） | 不输出 | 凭空补出「**优优独播剧场**」 |
+
+最后两行是 Whisper 的经典幻觉：它的训练集里有海量视频字幕，遇到没有人声的段落不会输出「空」，
+而是吐出训练集里最高频的字幕文本（音乐视频的作者署名卡、盗版剧集的片尾水印）。
+
+速度上 qwen 也不吃亏：4.5 分钟音频 3.7s vs Groq 5.1s。
+
+### 专有名词提示（`--context`）
+
+`qwen` 引擎支持传入专有名词偏置识别结果：
+
+```bash
+starsummary lecture.mp3 --context "卷积 感受野 池化 反向传播"
+```
+
+> ⚠️ **这是双刃剑，默认关闭。** 实测中给出不完整的提示词，会把模型**本来识别正确的词带偏**
+> （同一段音频裸跑得到「装甲」，加了一组不含「装甲」的提示词后反而退化成「庄稼」）。
+> 只在你确切知道音频里会出现哪些人名/术语、并且能写全时才用。
+>
+> 顺带一提，Whisper 的 `prompt` 参数在中文上更糟：实测它会把提示词**原样吐进转录结果**里，
+> 并在结尾进入复读循环。所以 `--context` 对 `groq` 引擎不生效。
 
 ## Whisper 模型选择
 
@@ -329,7 +363,8 @@ StarSummary/
 │   │   └── local.py
 │   ├── transcriber/             # 转录模块
 │   │   ├── base.py
-│   │   ├── groq.py              # Groq whisper-large-v3（默认，含 >25MB 分片）
+│   │   ├── qwen.py              # 阿里 qwen3-asr-flash（默认，含静音点切片+并发）
+│   │   ├── groq.py              # Groq whisper-large-v3（含 >25MB 分片）
 │   │   ├── paraformer.py
 │   │   └── whisper_local.py
 │   └── summarizer/              # 总结模块

@@ -11,9 +11,12 @@ class Config:
     input: str = ""
 
     # ASR 引擎
-    engine: str = "groq"               # groq / paraformer / whisper
+    engine: str = "qwen"               # qwen / groq / whisper / paraformer
     whisper_model: str = "small"       # tiny/base/small/medium/large-v2/large-v3
     language: str | None = None        # zh/en/ja，None 为自动检测
+    # 专有名词提示（仅 qwen 引擎）。默认空——实测乱给 context 会把本来对的词带偏，
+    # 只在明确知道音频里有哪些人名/术语时才填，且要写全。
+    asr_context: str = ""
 
     # 总结
     summarize: bool = False

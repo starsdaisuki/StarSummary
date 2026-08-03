@@ -15,6 +15,7 @@ from telegram.ext import (
     filters,
 )
 from star_summary.config import Config
+from star_summary.transcriber import ENGINES, DEFAULT_ENGINE
 from star_summary.utils import format_time
 
 WELCOME_TEXT = """✦ StarSummary (星语) ✦
@@ -30,7 +31,8 @@ YouTube, Bilibili, 抖音, 西瓜视频, 微博, Twitter/X, 及更多 yt-dlp 支
 
 命令：
 /start - 欢迎信息
-/help - 使用帮助"""
+/help - 使用帮助
+/engine - 切换识别引擎（中文推荐阿里 qwen）"""
 
 HELP_TEXT = """使用帮助
 
@@ -47,9 +49,15 @@ https://www.youtube.com/watch?v=xxx
 转录完成后，Bot 会直接回复文字。
 如果文本较长，会以 txt 文件形式发送。
 
+4. 切换识别引擎
+发送 /engine 弹出引擎选择菜单，点一下就切，之后的转录都用新引擎。
+• 阿里 qwen3-asr-flash（默认）— 中文/歌曲/术语最准，不会在静音段编字幕
+• Groq whisper-large-v3 — 英文够用，免费额度大
+• 本地 faster-whisper — 离线可用，慢
+
 注意：
 • 较长的视频可能需要几分钟处理
-• 默认使用阿里云 Paraformer 引擎"""
+• 引擎选择按聊天记住，重启 Bot 后回到默认"""
 
 # URL 正则
 _URL_PATTERN = re.compile(r'https?://\S+')
@@ -87,11 +95,12 @@ def _is_url(text: str) -> bool:
     return bool(_URL_PATTERN.match(text.strip()))
 
 
-def _run_transcribe(audio_path: str) -> tuple[str, str]:
+def _run_transcribe(audio_path: str, engine: str | None = None) -> tuple[str, str]:
     """
     执行转录流水线，返回 (转录文本, 状态信息)。
+    engine 为 None 时用默认引擎；由 /engine 命令按聊天覆盖。
     """
-    config = Config()
+    config = Config(engine=engine or DEFAULT_ENGINE)
     from star_summary.transcriber import get_transcriber
 
     transcriber = get_transcriber(
@@ -99,6 +108,7 @@ def _run_transcribe(audio_path: str) -> tuple[str, str]:
         model=config.whisper_model,
         api_key=config.dashscope_api_key,
         groq_api_key=config.groq_api_key,
+        context=config.asr_context,
     )
 
     transcript = transcriber.transcribe(audio_path, language=config.language)
@@ -174,6 +184,30 @@ async def cmd_help(update: Update, context) -> None:
     await update.message.reply_text(HELP_TEXT)
 
 
+def _current_engine(context) -> str:
+    return context.user_data.get("engine", DEFAULT_ENGINE)
+
+
+async def cmd_engine(update: Update, context) -> None:
+    """/engine —— 弹出引擎选择菜单"""
+    if not await _check_user(update):
+        return
+
+    current = _current_engine(context)
+    rows = []
+    for key, meta in ENGINES.items():
+        mark = "✅ " if key == current else ""
+        rows.append([InlineKeyboardButton(f"{mark}{meta['label']}", callback_data=f"eng:{key}")])
+
+    lines = ["🧠 选择识别引擎\n", f"当前：{ENGINES[current]['label']}\n"]
+    for key, meta in ENGINES.items():
+        lines.append(f"• {meta['label']}\n  {meta['desc']}")
+    await update.message.reply_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
+
+
 async def handle_url(update: Update, context) -> None:
     """处理用户发送的 URL"""
     if not await _check_user(update):
@@ -206,7 +240,7 @@ async def handle_url(update: Update, context) -> None:
 
     # 转录
     try:
-        text, info = _run_transcribe(download_result.audio_path)
+        text, info = _run_transcribe(download_result.audio_path, engine=_current_engine(context))
     except Exception as e:
         await status_msg.edit_text(f"❌ 转录失败: {e}\n\n请稍后重试。")
         return
@@ -253,7 +287,7 @@ async def handle_file(update: Update, context) -> None:
 
     # 转录
     try:
-        text, info = _run_transcribe(local_path)
+        text, info = _run_transcribe(local_path, engine=_current_engine(context))
     except Exception as e:
         await status_msg.edit_text(f"❌ 转录失败: {e}\n\n请稍后重试。")
         return
@@ -299,6 +333,18 @@ async def handle_callback(update: Update, context) -> None:
     """处理 Inline Keyboard 按钮点击"""
     query = update.callback_query
     await query.answer()
+
+    # 引擎切换：不依赖已有转录，必须在 last_transcript 检查之前处理
+    if query.data and query.data.startswith("eng:"):
+        key = query.data.split(":", 1)[1]
+        if key not in ENGINES:
+            return
+        context.user_data["engine"] = key
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(
+            f"✅ 已切换到 {ENGINES[key]['label']}\n{ENGINES[key]['desc']}"
+        )
+        return
 
     transcript = context.user_data.get("last_transcript", "")
     if not transcript:
@@ -417,6 +463,7 @@ def main() -> None:
     # 命令处理
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("engine", cmd_engine))
 
     # 文件处理（音频、视频、文档、语音）
     app.add_handler(MessageHandler(

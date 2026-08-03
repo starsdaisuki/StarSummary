@@ -7,13 +7,22 @@ import traceback
 import gradio as gr
 
 from star_summary.config import Config
+from star_summary.transcriber import ENGINES, DEFAULT_ENGINE
 from star_summary.utils import format_time
+
+# 下拉框显示「标签 —— 说明」，回选时映射回 engine key
+_ENGINE_CHOICES = [f"{v['label']} —— {v['desc']}" for v in ENGINES.values()]
+_LABEL_TO_ENGINE = {
+    f"{v['label']} —— {v['desc']}": k for k, v in ENGINES.items()
+}
+_DEFAULT_CHOICE = f"{ENGINES[DEFAULT_ENGINE]['label']} —— {ENGINES[DEFAULT_ENGINE]['desc']}"
 
 
 def _run_pipeline(
     source: str,
-    engine: str,
+    engine_label: str,
     language: str,
+    asr_context: str,
     summarize: bool,
 ) -> tuple[str, str, str]:
     """
@@ -23,10 +32,13 @@ def _run_pipeline(
     if not source.strip():
         return "", "", "请输入视频链接或文件路径"
 
+    engine = _LABEL_TO_ENGINE.get(engine_label, DEFAULT_ENGINE)
+
     config = Config(
         input=source.strip(),
         engine=engine,
         language=language if language != "auto" else None,
+        asr_context=asr_context.strip() if engine == "qwen" else "",
         summarize=summarize,
     )
 
@@ -52,6 +64,7 @@ def _run_pipeline(
         model=config.whisper_model,
         api_key=config.dashscope_api_key,
         groq_api_key=config.groq_api_key,
+        context=config.asr_context,
     )
 
     try:
@@ -118,14 +131,20 @@ def _build_ui() -> gr.Blocks:
                     lines=1,
                 )
                 engine_radio = gr.Radio(
-                    choices=["groq", "paraformer", "whisper"],
-                    value="groq",
-                    label="ASR 引擎",
+                    choices=_ENGINE_CHOICES,
+                    value=_DEFAULT_CHOICE,
+                    label="ASR 引擎（中文素材选第一个）",
                 )
                 lang_dropdown = gr.Dropdown(
                     choices=["auto", "zh", "en", "ja"],
                     value="auto",
                     label="语言",
+                )
+                context_input = gr.Textbox(
+                    label="专有名词提示（可选，仅 qwen 引擎）",
+                    placeholder="卷积 感受野 池化 反向传播",
+                    info="⚠️ 双刃剑：词写不全会把本来识别对的词带偏，不确定就留空",
+                    lines=2,
                 )
                 summarize_check = gr.Checkbox(
                     label="AI 总结 (需要 DEEPSEEK_API_KEY)",
@@ -152,7 +171,7 @@ def _build_ui() -> gr.Blocks:
 
         run_btn.click(
             fn=_run_pipeline,
-            inputs=[source_input, engine_radio, lang_dropdown, summarize_check],
+            inputs=[source_input, engine_radio, lang_dropdown, context_input, summarize_check],
             outputs=[transcript_output, summary_output, status_output],
         )
 

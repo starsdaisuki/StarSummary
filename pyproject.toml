@@ -5,7 +5,7 @@ description = "StarSummary (星语) - Video/Audio → Transcript → Summary"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "dashscope>=1.20.0",
+    "dashscope>=1.26",
     "gradio>=6.6.0",
     "openai>=1.0.0",
     "python-dotenv>=1.2.1",

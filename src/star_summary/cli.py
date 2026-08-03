@@ -11,6 +11,7 @@ from datetime import datetime
 from star_summary import __version__
 from star_summary.config import Config
 from star_summary.models import TranscriptResult, SummaryResult
+from star_summary.transcriber import ENGINES, DEFAULT_ENGINE
 from star_summary.utils import (
     _Colors as _C,
     log_step, log_info, log_success, log_warn, log_error, format_time,
@@ -130,6 +131,7 @@ def _build_config_from_args(args: argparse.Namespace) -> Config:
         engine=args.engine,
         whisper_model=args.model,
         language=args.lang,
+        asr_context=args.context or "",
         summarize=args.summarize,
         deepseek_api_key=args.api_key or "",
         cookies=args.cookies,
@@ -237,7 +239,7 @@ def _transcribe_and_save(transcriber, summarizer, path: str, out_dir: str | None
 
 
 def _interactive_batch() -> None:
-    """无参数时的引导模式：扫描文件夹 → 选择 → 批量转录（默认 Groq whisper-large-v3）。"""
+    """无参数时的引导模式：扫描文件夹 → 选引擎 → 批量转录（默认 qwen3-asr-flash）。"""
     from star_summary.transcriber import get_transcriber
 
     print(f"\n{_C.MAGENTA}{_C.BOLD}⭐ StarSummary 交互模式{_C.RESET}")
@@ -292,14 +294,39 @@ def _interactive_batch() -> None:
                 log_error("无效选择")
                 sys.exit(1)
 
-    # 3. 语言
+    # 3. 引擎
+    engine_keys = list(ENGINES)
+    print("\n🧠 用哪个识别引擎？（直接回车 = 1）")
+    for i, k in enumerate(engine_keys, 1):
+        star = " ←默认" if k == DEFAULT_ENGINE else ""
+        print(f"   {i}. {ENGINES[k]['label']}{star}")
+        print(f"      {_C.DIM}{ENGINES[k]['desc']}{_C.RESET}")
+    pick = _prompt_line("   选择: ")
+    engine = DEFAULT_ENGINE
+    if pick:
+        if pick in ENGINES:
+            engine = pick
+        elif pick.isdigit() and 1 <= int(pick) <= len(engine_keys):
+            engine = engine_keys[int(pick) - 1]
+        else:
+            log_warn(f"看不懂「{pick}」，用默认 {DEFAULT_ENGINE}")
+
+    # 4. 专有名词提示（仅 qwen）
+    asr_context = ""
+    if engine == "qwen":
+        print("\n🏷️  音频里有特殊人名/术语吗？（直接回车 = 跳过，推荐跳过）")
+        print(f"   {_C.DIM}⚠️ 词写不全反而会把本来对的词带偏，只在你确定时才填{_C.RESET}")
+        print(f"   {_C.DIM}例: 卷积 感受野 池化 反向传播{_C.RESET}")
+        asr_context = _prompt_line("   提示词: ")
+
+    # 5. 语言
     print("\n🌐 语言？（直接回车 = zh 中文，中英混说也 OK）")
     print(f"   {_C.DIM}也可填: en  ja  auto{_C.RESET}")
     lang = _prompt_line("   语言: ").lower() or "zh"
     if lang == "auto":
         lang = None
 
-    # 4. 输出目录
+    # 6. 输出目录
     print("\n📝 转录文本输出到哪？")
     print(f"   {_C.DIM}直接回车 = 和源文件同目录{_C.RESET}")
     out_dir = _prompt_line("   路径: ")
@@ -309,16 +336,17 @@ def _interactive_batch() -> None:
     else:
         out_dir = None
 
-    # 5. 可选 AI 总结
+    # 7. 可选 AI 总结
     do_summary = _prompt_line("\n🤖 顺便给每篇做 AI 总结? [y/N]: ").lower() in ("y", "yes")
 
     # 准备引擎 + 总结器
-    config = Config()
+    config = Config(engine=engine, asr_context=asr_context)
     transcriber = get_transcriber(
         engine=config.engine,
         model=config.whisper_model,
         api_key=config.dashscope_api_key,
         groq_api_key=config.groq_api_key,
+        context=config.asr_context,
     )
     summarizer = None
     if do_summary:
@@ -356,8 +384,9 @@ def _parse_args() -> argparse.Namespace:
 Examples:
   %(prog)s "https://www.bilibili.com/video/BV1xx..."
   %(prog)s "https://www.youtube.com/watch?v=xxx" --engine whisper --model large-v3
-  %(prog)s recording.m4a --lang zh             # 默认 groq 引擎（云端 whisper-large-v3）
-  %(prog)s video.mp4 --engine paraformer       # 超长音频用阿里云实时兜底
+  %(prog)s recording.m4a --lang zh             # 默认 qwen 引擎（阿里 qwen3-asr-flash，中文最准）
+  %(prog)s video.mp4 --engine groq             # 英文素材可用 Groq whisper-large-v3
+  %(prog)s lecture.mp3 --context "卷积 感受野 池化 反向传播"   # 专有名词提示（谨慎用，见 --context 说明）
   %(prog)s audio.mp3 --summarize
   %(prog)s "https://..." -s -o ~/summaries/
   %(prog)s "https://v.douyin.com/xxx" -cb chrome
@@ -371,9 +400,9 @@ Examples:
     )
     parser.add_argument(
         "-e", "--engine",
-        default="groq",
-        choices=["groq", "paraformer", "whisper"],
-        help="ASR engine (default: groq — cloud whisper-large-v3, free tier)",
+        default=DEFAULT_ENGINE,
+        choices=list(ENGINES),
+        help=f"ASR engine (default: {DEFAULT_ENGINE} — 阿里 qwen3-asr-flash，中文准确率远高于 whisper)",
     )
     parser.add_argument(
         "-m", "--model",
@@ -385,6 +414,12 @@ Examples:
         "-l", "--lang",
         default=None,
         help="Language code, e.g. zh, en, ja (default: auto-detect)",
+    )
+    parser.add_argument(
+        "--context",
+        default=None,
+        help=("专有名词提示，空格分隔，仅 qwen 引擎生效。⚠️ 实测是双刃剑："
+              "提示词不全会把本来识别对的词带偏，只在你确定音频里有哪些人名/术语时才用"),
     )
     parser.add_argument(
         "-s", "--summarize",
@@ -472,6 +507,7 @@ def main() -> None:
         model=config.whisper_model,
         api_key=config.dashscope_api_key,
         groq_api_key=config.groq_api_key,
+        context=config.asr_context,
     )
 
     try:
